@@ -19,9 +19,11 @@ import GoButton from "./GoButton";
 import RequestButton from "./RequestButton";
 import { setOnlineDrivers } from "@/app/store/slices/onlineDrivers.slice";
 import { all } from "axios";
+import { useColorScheme } from "@/components/useColorScheme.web";
 
 const GOOGLE_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
-
+const colorScheme = useColorScheme() ?? "light";
+const isDark = colorScheme === 'dark';
 const Map = () => {
     const [isOnline, setIsOnline] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -51,14 +53,14 @@ const Map = () => {
         // enabled: !!currentLocation && !!destinationCoords, // ✅ recommended
     });
 
-    useEffect(() => {
-        const interval = setInterval(() => {
-            // Your refresh logic here, e.g., fetch new data
-            console.log("Refreshing...");
-        }, 5000); // 5000ms = 5 seconds
+    // useEffect(() => {
+    //     const interval = setInterval(() => {
+    //         // Your refresh logic here, e.g., fetch new data
+    //         console.log("Refreshing...");
+    //     }, 5000); // 5000ms = 5 seconds
 
-        return () => clearInterval(interval); // Cleanup on unmount
-    }, []);
+    //     return () => clearInterval(interval); // Cleanup on unmount
+    // }, []);
         
     useEffect(() => {
         if (allDrivers.length) {
@@ -127,15 +129,8 @@ const Map = () => {
         if (!currentLocation) return;
 
         try {
-            Toast.show({
-                type: "success",
-                text1: `You are going ${onlineStatus ? "Online" : "Offline"}`
-            })
-            // Alert.alert(
-            //     "Status Change",
-            //     `You are going ${onlineStatus ? "Online" : "Offline"}`
-            // );
             setLoading(true);
+
             const payload: IUpdateOnlineStatus = {
                 currentLocation,
                 destination: destinationCoords!,
@@ -143,18 +138,24 @@ const Map = () => {
                 onlineStatus,
                 rego: "AS87GH",
             };
-            const response = await updateOnlineStatus(payload);
-            if (response?.status === "success") {
-                dispatch(setDriverOnlineStatus(response?.data?.onlineStatus as boolean));
-            }
 
-            setIsOnline(onlineStatus);
+            const response = await updateOnlineStatus(payload);
+
+            if (response?.status === "success") {
+                dispatch(setDriverOnlineStatus(onlineStatus));
+                setIsOnline(onlineStatus);
+                Toast.show({
+                    type: "success",
+                    text1: `You are now ${onlineStatus ? "Online" : "Offline"}`,
+                });
+            }
         } catch (err) {
-            console.error("Failed to go online", err);
+            console.error("Failed to update online status", err);
         } finally {
             setLoading(false);
         }
     };
+
 
     const handleOnRequestRide = () => {
         Toast.show({
@@ -303,7 +304,10 @@ export default Map;
 
 
 const styles = StyleSheet.create({
-    container: { flex: 1, top: 60 },
+    container: {
+        flex: 1,
+        backgroundColor: isDark ? '#000' : '#fff'
+     },
     map: { flex: 1 },
     topBar: {
         position: "absolute",
@@ -317,14 +321,13 @@ const styles = StyleSheet.create({
     },
     goButtonContainer: {
         position: "absolute",
-        bottom: 120,
+        bottom: 10,
         left: 0,
         right: 0,
         alignItems: "center",
         zIndex: 999,
     },
     recenterBtn: {
-
         position: "absolute",
         bottom: 180,
         right: 16,

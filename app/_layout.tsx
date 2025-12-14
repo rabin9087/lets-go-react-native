@@ -5,11 +5,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { StyleSheet, View } from "react-native";
 import 'react-native-reanimated';
+import { SafeAreaView } from "react-native-safe-area-context";
+import Toast from "react-native-toast-message";
 import { Provider } from 'react-redux';
 import { store } from './store';
-import Toast from "react-native-toast-message";
 
 const queryClient = new QueryClient();
 SplashScreen.preventAutoHideAsync();
@@ -19,6 +22,9 @@ export default function RootLayout() {
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
     ...FontAwesome.font,
   });
+
+  const colorScheme = useColorScheme() ?? "light";
+  const isDark = colorScheme === 'dark';
 
   useEffect(() => {
     if (error) throw error;
@@ -30,32 +36,44 @@ export default function RootLayout() {
 
   if (!loaded) return null;
 
-  return <RootLayoutNav />;
+  return <RootLayoutNav isDark={isDark} colorScheme={colorScheme} />;
 }
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
-
+function RootLayoutNav({ isDark, colorScheme }: { isDark: boolean; colorScheme: 'dark' | 'light' }) {
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
       <QueryClientProvider client={queryClient}>
         <Provider store={store}>
-          <Stack
-            screenOptions={{
-              headerShown: false,
-              headerBackVisible: true,
-              headerTitle: '',
-            }}
-          >
-            {/* Screens will be automatically loaded based on file names */}
-            {/* All your screens automatically */}
-            <Stack.Screen name="pages/home/map" options={{ title: "Map" }} />
-            <Stack.Screen name="pages/user/usersignin" options={{ title: "Sign In" }} />
-            <Stack.Screen name="pages/sidebar/sidebar" options={{ title: "Account" }} />
-            <Toast />
-          </Stack>
+          <SafeAreaView style={[styles.safeArea, { backgroundColor: isDark ? '#000' : '#fff' }]}>
+            <StatusBar
+              style={isDark ? 'light' : 'dark'}
+              backgroundColor={isDark ? '#000' : '#fff'}
+              translucent={false}
+            />
+            <View style={styles.container}>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                }}
+              >
+                <Stack.Screen name="pages/home/map" />
+                <Stack.Screen name="pages/user/usersignin" />
+                <Stack.Screen name="pages/sidebar/sidebar" />
+              </Stack>
+              <Toast />
+            </View>
+          </SafeAreaView>
         </Provider>
       </QueryClientProvider>
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
+  container: {
+    flex: 1,
+  },
+});

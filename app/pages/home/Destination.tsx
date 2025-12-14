@@ -1,6 +1,7 @@
-import React from "react";
-import { View, TextInput, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import React from "react";
+import { StyleSheet, TextInput, View } from "react-native";
 
 interface Props {
     currentLocation: { latitude: number; longitude: number } | null;
@@ -9,19 +10,25 @@ interface Props {
 }
 
 const Destination = ({ destination, onDestinationChange }: Props) => {
+    const router = useRouter();
+
     return (
         <View style={styles.card}>
             {/* Destination Input */}
             <View style={styles.inputContainer}>
                 <Ionicons name="location" size={18} color="red" />
-                <TextInput
-                    style={styles.input}
-                    value={destination}
-                    onChangeText={onDestinationChange}
-                    placeholder="Enter destination"
-                    placeholderTextColor="#999"
-                />
-            </View>
+                    <TextInput
+                        style={styles.input}
+                        value={destination}
+                        onPress={() => {
+                            router.push("pages/home/SearchDesitantion");
+                        }}
+                        onChangeText={onDestinationChange}
+                        placeholder="Enter destination"
+                        placeholderTextColor="#999"
+                    />
+                
+                </View>
         </View>
     );
 };
