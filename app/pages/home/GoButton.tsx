@@ -1,10 +1,12 @@
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { useAppSelector } from "@/app/store/hooks";
+import { useColorScheme } from "@/components/useColorScheme.web";
 
 type GoButtonProps = {
     loading: boolean;
     handleGoOnline: () => void;
 };
+
+const theme = useColorScheme() ?? "light";
 
 const GoButton = ({ loading, handleGoOnline }: GoButtonProps) => {
     return (
@@ -15,7 +17,7 @@ const GoButton = ({ loading, handleGoOnline }: GoButtonProps) => {
                 disabled={loading}
             >
                 {loading ? (
-                    <ActivityIndicator color="#fff" />
+                    <ActivityIndicator color={theme ? "#fff" : "#000"} />
                 ) : (
                     <Text style={styles.text}>Let’s GO</Text>
                 )}
@@ -34,7 +36,7 @@ const styles = StyleSheet.create({
     },
 
     button: {
-        backgroundColor: "#000",
+        backgroundColor: theme ? "#fff" : "#000",
         paddingVertical: 15,
         borderRadius: 40,
         width: "100%",
@@ -42,7 +44,7 @@ const styles = StyleSheet.create({
         justifyContent: "center",
 
         // Uber-like shadow
-        shadowColor: "#000",
+        shadowColor: theme ? "#000" : "#fff",
         shadowOpacity: 0.3,
         shadowRadius: 4,
         shadowOffset: { width: 0, height: 3 },
@@ -50,7 +52,7 @@ const styles = StyleSheet.create({
     },
 
     text: {
-        color: "#fff",
+        color: theme ? "#000" : "#fff",
         fontSize: 18,
         fontWeight: "600",
         letterSpacing: 0.5,

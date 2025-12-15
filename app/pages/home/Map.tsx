@@ -1,74 +1,97 @@
-import { IUpdateOnlineStatus, getAllOnlineDrivers, updateOnlineStatus } from "@/app/axios/driver";
+import {
+    IUpdateOnlineStatus,
+    getAllOnlineDrivers,
+    updateOnlineStatus,
+} from "@/app/axios/driver";
 import { ICoordinates, IDRIVERRIDE } from "@/app/axios/types";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
+import { setOnlineDrivers } from "@/app/store/slices/onlineDrivers.slice";
 import { setDriverOnlineStatus } from "@/app/store/slices/user.slice";
+import { useColorScheme } from "@/components/useColorScheme.web";
 import { Ionicons } from "@expo/vector-icons";
 import polyline from "@mapbox/polyline";
 import { useQuery } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import * as Location from "expo-location";
-import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import MapView, { Marker, PROVIDER_GOOGLE, Polyline } from "react-native-maps";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+    ActivityIndicator,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
+import MapView, {
+    Marker,
+    PROVIDER_GOOGLE,
+    Polyline,
+} from "react-native-maps";
 import Toast from "react-native-toast-message";
+
 import Menu from "../menu/Menu";
 import Sidebar from "../sidebar/Sidebar";
-import { IUser } from "../user/user.types";
 import Destination from "./Destination";
-import GoButton from "./GoButton";
-import RequestButton from "./RequestButton";
-import { setOnlineDrivers } from "@/app/store/slices/onlineDrivers.slice";
-import { all } from "axios";
-import { useColorScheme } from "@/components/useColorScheme.web";
 
-const GOOGLE_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
-const colorScheme = useColorScheme() ?? "light";
-const isDark = colorScheme === 'dark';
+const GOOGLE_API_KEY =
+    Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
+
 const Map = () => {
-    const [isOnline, setIsOnline] = useState(false);
+    /* ---------------- THEME ---------------- */
+    const theme = useColorScheme() ?? "light";
+    const isDark = theme === "dark";
+
+    const colors = useMemo(
+        () => ({
+            background: isDark ? "#000" : "#fff",
+            card: isDark ? "#1C1C1E" : "#fff",
+            text: isDark ? "#fff" : "#000",
+            tint: isDark ? "#fff" : "#007AFF",
+            danger: "#ff3b30",
+            route: "#007AFF",
+            recenterBg: isDark ? "#1C1C1E" : "#fff",
+        }),
+        [isDark]
+    );
+
+    /* ---------------- STATE ---------------- */
     const [loading, setLoading] = useState(false);
     const [currentLocation, setCurrentLocation] =
         useState<ICoordinates | null>(null);
     const [destination, setDestination] = useState("");
     const [destinationCoords, setDestinationCoords] =
-        useState<ICoordinates | null>({ latitude: -33.967965, longitude: 151.101609 });
+        useState<ICoordinates | null>(null);
     const [routeCoords, setRouteCoords] = useState<ICoordinates[]>([]);
     const [sidebarVisible, setSidebarVisible] = useState(false);
+
     const { user } = useAppSelector((s) => s.userInfo);
     const { drivers } = useAppSelector((s) => s.onlineDriversInfo);
     const dispatch = useAppDispatch();
+
     const mapRef = useRef<MapView>(null);
 
-    const {
-        data: allDrivers = [],
-        isLoading,
-        isError,
-    } = useQuery<IDRIVERRIDE[]>({
+    /* ---------------- FLAGS ---------------- */
+    const isDriver = user?.role === "driver";
+    const isOnline = user?.driverProfile?.isOnline;
+
+    /* ---------------- FETCH ONLINE DRIVERS ---------------- */
+    const shouldFetchDrivers =
+        !isDriver && !!currentLocation && !!destinationCoords;
+
+    const { data: allDrivers = [] } = useQuery<IDRIVERRIDE[]>({
         queryKey: ["allOnlineDrivers", currentLocation, destinationCoords],
         queryFn: () =>
             getAllOnlineDrivers(
                 currentLocation as ICoordinates,
                 destinationCoords as ICoordinates
             ),
-        // enabled: !!currentLocation && !!destinationCoords, // ✅ recommended
+        enabled: shouldFetchDrivers,
     });
 
-    // useEffect(() => {
-    //     const interval = setInterval(() => {
-    //         // Your refresh logic here, e.g., fetch new data
-    //         console.log("Refreshing...");
-    //     }, 5000); // 5000ms = 5 seconds
-
-    //     return () => clearInterval(interval); // Cleanup on unmount
-    // }, []);
-        
     useEffect(() => {
         if (allDrivers.length) {
             dispatch(setOnlineDrivers(allDrivers));
-
         }
-    }, [allDrivers.length, dispatch]);
-
+    }, [allDrivers, dispatch]);
 
     /* ---------------- LOCATION ---------------- */
     useEffect(() => {
@@ -124,7 +147,7 @@ const Map = () => {
         })();
     }, [currentLocation, destinationCoords]);
 
-    /* ---------------- GO ONLINE ---------------- */
+    /* ---------------- GO ONLINE / OFFLINE ---------------- */
     const handleGoOnline = async (onlineStatus: boolean) => {
         if (!currentLocation) return;
 
@@ -137,45 +160,24 @@ const Map = () => {
                 email_phone: user.phone!,
                 onlineStatus,
                 rego: "AS87GH",
+                seatAvailable: 0,
             };
 
             const response = await updateOnlineStatus(payload);
 
             if (response?.status === "success") {
                 dispatch(setDriverOnlineStatus(onlineStatus));
-                setIsOnline(onlineStatus);
                 Toast.show({
                     type: "success",
                     text1: `You are now ${onlineStatus ? "Online" : "Offline"}`,
                 });
             }
         } catch (err) {
-            console.error("Failed to update online status", err);
+            console.error(err);
         } finally {
             setLoading(false);
         }
     };
-
-
-    const handleOnRequestRide = () => {
-        Toast.show({
-            type: "success",
-            text1: `Finding a Deiver`
-        })
-        if (!currentLocation || !destination || !user?.phone) return;
-        console.log(currentLocation, destination, user?.phone)
-        try {
-            Toast.show({
-                type: "success",
-                text1: `Finding a Deiver`
-            })
-        } catch (error) {
-            console.error("Failed to go online", error);
-
-        } finally {
-            setLoading(false);
-        }
-    }
 
     /* ---------------- RECENTER ---------------- */
     const recenterMap = () => {
@@ -194,8 +196,9 @@ const Map = () => {
     if (!currentLocation) return <View style={{ flex: 1 }} />;
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Top Bar */}
+            
             <View style={styles.topBar}>
                 <TouchableOpacity onPress={() => setSidebarVisible(true)}>
                     <Menu />
@@ -208,18 +211,15 @@ const Map = () => {
                 />
             </View>
 
-
-
-            <Sidebar
-                visible={sidebarVisible}
-                onClose={() => setSidebarVisible(false)}
-            />
+            <Sidebar visible={sidebarVisible} onClose={() => setSidebarVisible(false)} />
 
             {/* Map */}
             <MapView
                 ref={mapRef}
                 provider={PROVIDER_GOOGLE}
-                style={styles.map}
+                style={[
+                    styles.map,
+                ]}
                 initialRegion={{
                     ...currentLocation,
                     latitudeDelta: 0.01,
@@ -227,35 +227,31 @@ const Map = () => {
                 }}
                 showsUserLocation
             >
-
-                {drivers.length > 0 &&
-                    drivers.map((driver, index) =>
-                        driver.currentLocation?.latitude &&
-                            driver.currentLocation?.longitude ? (
+                {drivers.map(
+                    (driver, index) =>
+                        driver.currentLocation && (
                             <Marker
-                                    key={index}
-                                coordinate={{
-                                    latitude: driver.currentLocation.latitude,
-                                    longitude: driver.currentLocation.longitude,
-                                }}
+                                key={index}
+                                coordinate={driver.currentLocation}
                             >
-                                <Ionicons name="car-sport" size={36} color="black" />
+                                <Ionicons
+                                    name="car-sport"
+                                    size={34}
+                                    color={colors.text}
+                                />
                             </Marker>
-                        ) : null
-                    )}
-                {/* <Marker coordinate={currentLocation} /> */}
+                        )
+                )}
+
                 {destinationCoords && (
-                    <Marker
-                        coordinate={destinationCoords}
-                        pinColor="red"
-                    />
+                    <Marker coordinate={destinationCoords} pinColor="red" />
                 )}
 
                 {routeCoords.length > 0 && (
                     <Polyline
                         coordinates={routeCoords}
                         strokeWidth={4}
-                        strokeColor="#007AFF"
+                        strokeColor={colors.route}
                     />
                 )}
             </MapView>
@@ -263,97 +259,72 @@ const Map = () => {
             {/* Recenter */}
             <TouchableOpacity
                 onPress={recenterMap}
-                style={styles.recenterBtn}
+                style={[styles.recenterBtn, { backgroundColor: colors.recenterBg }]}
             >
-                <Ionicons name="locate-outline" size={24} />
+                <Ionicons
+                    name="locate-outline"
+                    size={24}
+                    color={colors.text}
+                />
             </TouchableOpacity>
-            <View style={{ left: 50, bottom: 150, position: "absolute", }}>
-                <Text>{user?.driverProfile?.isOnline ? "true" : "false"}</Text>
-            </View>
 
-            {/* Go / Offline */}
-            <View style={styles.goButtonContainer}>
-                {user?.role === "driver" ? (
-                    user?.driverProfile?.isOnline ? (
-                        <TouchableOpacity
-                            onPress={() => handleGoOnline(false)}
-                            disabled={loading}
-                            style={styles.offlineBtn}
-                        >
-                            {loading ? (
-                                <ActivityIndicator color="#fff" />
-                            ) : (
-                                <Text style={styles.offlineText}>Go Offline</Text>
-                            )}
-                        </TouchableOpacity>
-                    ) : (
-                        <GoButton
-                            loading={loading}
-                            handleGoOnline={() => handleGoOnline(true)}
-                        />
-                    )
-                ) : <RequestButton loading={loading}
-                    handleGoOnline={() => handleOnRequestRide()} />}
-            </View>
-
+            {/* Go Offline */}
+            {isDriver && isOnline && (
+                <View style={styles.goButtonContainer}>
+                    <TouchableOpacity
+                        onPress={() => handleGoOnline(false)}
+                        disabled={loading}
+                        style={[styles.offlineBtn, { backgroundColor: colors.danger }]}
+                    >
+                        {loading ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.offlineText}>Go Offline</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            )}
         </View>
     );
 };
 
 export default Map;
 
-
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: isDark ? '#000' : '#fff'
-     },
-    map: { flex: 1 },
+    container: { flex: 1 },
+    map: { flex: 1 }
+    ,
     topBar: {
         position: "absolute",
         top: 20,
-        left: 20,
-        right: 20,
-        zIndex: 999,
+        left: 16,
+        right: 16,
+        zIndex: 10,
         flexDirection: "row",
         alignItems: "center",
-        gap: 10,
+        gap: 12,
     },
+
     goButtonContainer: {
         position: "absolute",
-        bottom: 10,
+        bottom: 16,
         left: 0,
         right: 0,
         alignItems: "center",
-        zIndex: 999,
     },
+
     recenterBtn: {
         position: "absolute",
-        bottom: 180,
+        bottom: 50,
         right: 16,
-        backgroundColor: "#fff",
         padding: 14,
         borderRadius: 30,
-        elevation: 5,
-        shadowColor: "#000",
-        shadowOpacity: 0.2,
-        shadowRadius: 5,
+        elevation: 4,
+    },
 
-    },
-    recenterText: {
-        color: "#fff",
-        fontWeight: "600",
-    },
-    offline: {
-        color: "#f00",
-        backgroundColor: "#0ff",
-        padding: 8,
-        borderRadius: 10
-    },
     offlineBtn: {
-        backgroundColor: "#ff3b30",
         paddingVertical: 14,
-        paddingHorizontal: 30,
+        paddingHorizontal: 32,
         borderRadius: 30,
     },
 

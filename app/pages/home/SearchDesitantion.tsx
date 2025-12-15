@@ -1,19 +1,28 @@
+import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
+import { useRouter } from "expo-router";
+import debounce from "lodash.debounce";
 import React, { useEffect, useMemo, useState } from "react";
 import {
+    FlatList,
+    Platform,
     StyleSheet,
     TextInput,
     TouchableOpacity,
-    FlatList,
-    Platform,
+    ViewStyle,
 } from "react-native";
-import * as Location from "expo-location";
-import debounce from "lodash.debounce";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
 
+import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
+import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
+import { setDestinationLocation, setPickupLocation, setSeatsAvailable } from "@/app/store/slices/trip.slice";
+import { setDriverOnlineStatus } from "@/app/store/slices/user.slice";
 import { Text, View } from "@/components/Themed";
-import Colors from "@/constants/Colors";
 import { useColorScheme } from "@/components/useColorScheme";
+import Colors from "@/constants/Colors";
+import Constants from "expo-constants";
+import Toast from "react-native-toast-message";
+import GoButton from "./GoButton";
+import RequestButton from "./RequestButton";
 
 type LatLng = {
     latitude: number;
@@ -25,23 +34,34 @@ type PlacePrediction = {
     description: string;
 };
 
-const GOOGLE_API_KEY = "YOUR_GOOGLE_PLACES_API_KEY";
+const GOOGLE_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
 const SEAT_OPTIONS = [1, 2, 3, 4, 5, 6];
 
 const SearchDestination: React.FC = () => {
     const theme = useColorScheme() ?? "light";
     const router = useRouter();
-
+    const { user } = useAppSelector(s => s.userInfo);
+    const { pickupLocation, dropupLocation, seatsAvailable } = useAppSelector(s => s.tripInfo);
     const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
-    const [currentLocationInput, setCurrentLocationInput] = useState<string>("");
-    const [destination, setDestination] = useState<string>("");
+    const [pickup, setPickup] = useState<string>(pickupLocation.address);
+    const [destination, setDestination] = useState<string>(dropupLocation.address);
+    const [pickupCoords, setPickupCoords] = useState<LatLng | null>(null);
     const [destinationCoords, setDestinationCoords] = useState<LatLng | null>(null);
     const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
-    const [seats, setSeats] = useState<number>(4);
+    const [loading, setLoading] = useState(false);
+    const [activeInput, setActiveInput] = useState<"pickup" | "destination" | null>(null);
+    const isDriver = user?.role === "driver";
+    const isOnline = user?.driverProfile?.isOnline;
+    const defaultSeats = seatsAvailable && seatsAvailable > 0
+        ? seatsAvailable
+        : isDriver
+            ? 4
+            : 1;
 
-    /* ----------------------------------
-       GET CURRENT LOCATION
-    -----------------------------------*/
+    const [seats, setSeats] = useState<number>(defaultSeats);
+    const dispatch = useAppDispatch();
+
+    /* -------------------- GET CURRENT LOCATION -------------------- */
     useEffect(() => {
         (async () => {
             const { status } = await Location.requestForegroundPermissionsAsync();
@@ -55,9 +75,7 @@ const SearchDestination: React.FC = () => {
         })();
     }, []);
 
-    /* ----------------------------------
-       AUTOCOMPLETE (DEBOUNCED)
-    -----------------------------------*/
+    /* -------------------- AUTOCOMPLETE -------------------- */
     const fetchSuggestions = async (text: string) => {
         if (!text) {
             setSuggestions([]);
@@ -73,38 +91,86 @@ const SearchDestination: React.FC = () => {
 
     const debouncedFetch = useMemo(() => debounce(fetchSuggestions, 400), []);
 
-    const onDestinationChange = (text: string) => {
-        setDestination(text);
+    const onInputChange = (text: string, type: "pickup" | "destination") => {
+        if (type === "pickup") setPickup(text);
+        else setDestination(text);
+
+        setActiveInput(type);
         debouncedFetch(text);
     };
 
-    /* ----------------------------------
-       SELECT ADDRESS → LAT/LNG
-    -----------------------------------*/
+    /* -------------------- SELECT ADDRESS → LAT/LNG -------------------- */
     const onSelectAddress = async (placeId: string, description: string) => {
-        setDestination(description);
+        if (activeInput === "pickup") setPickup(description);
+        else setDestination(description);
         setSuggestions([]);
 
         const res = await fetch(
             `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&key=${GOOGLE_API_KEY}`
         );
         const data = await res.json();
-
         const loc = data.result.geometry.location;
-        setDestinationCoords({
-            latitude: loc.lat,
-            longitude: loc.lng,
-        });
+
+        if (activeInput === "pickup") {
+            setPickupCoords({ latitude: loc.lat, longitude: loc.lng })
+            dispatch(setPickupLocation({ address: description, coords: { latitude: loc.lat, longitude: loc.lng } }))
+        }
+        else {
+            setDestinationCoords({ latitude: loc.lat, longitude: loc.lng });
+            dispatch(setDestinationLocation({ address: description, coords: { latitude: loc.lat, longitude: loc.lng } }))
+        }
     };
 
-    /* ----------------------------------
-       USE CURRENT LOCATION AS INPUT
-    -----------------------------------*/
+    /* -------------------- USE CURRENT LOCATION -------------------- */
     const useCurrentLocation = () => {
         if (!currentLocation) return;
-        setCurrentLocationInput("Your Current Location");
-        setCurrentLocation(currentLocation);
+        setPickup("Your Current Location");
+        setPickupCoords(currentLocation);
     };
+
+    /* -------------------- ONLINE / REQUEST -------------------- */
+    const handleGoOnline = async (onlineStatus: boolean) => {
+        if (!pickupCoords || !destinationCoords) return;
+
+        try {
+            setLoading(true);
+            const payload: IUpdateOnlineStatus = {
+                currentLocation: pickupCoords,
+                destination: destinationCoords!,
+                email_phone: user.phone!,
+                onlineStatus,
+                rego: user?.driverProfile?.vehicle?.rego,
+                seatAvailable: seats
+            };
+
+            const response = await updateOnlineStatus(payload);
+
+            if (response?.status === "success") {
+                dispatch(setDriverOnlineStatus(onlineStatus));
+                router.push("pages/home/Map");
+                Toast.show({
+                    type: "success",
+                    text1: `You are now ${onlineStatus ? "Online" : "Offline"}`,
+                });
+            }
+        } catch (err) {
+            console.error("Failed to update online status", err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleOnRequestRide = () => {
+        if (!pickupCoords || !destinationCoords || !user?.phone) return;
+        const payload = { currentLocation: pickupCoords, destination: destinationCoords, email_phone: user.phone! };
+        router.push("pages/home/Map");
+        Toast.show({ type: "success", text1: `Finding a Driver` });
+    };
+
+    const handelOnSeatAvailable = (n: number) => {
+        setSeats(n)
+        dispatch(setSeatsAvailable(n))
+    }
 
     return (
         <View style={styles.container}>
@@ -116,24 +182,16 @@ const SearchDestination: React.FC = () => {
                 <Text style={styles.headerTitle}>Trip Details</Text>
             </View>
 
-            {/* Current Location Input */}
+            {/* Pickup Location */}
             <View style={[styles.card, styles.shadow, { backgroundColor: Colors[theme].card }]}>
-                <Text style={styles.label}>Current Location</Text>
+                <Text style={styles.label}>Pickup Location</Text>
                 <View style={styles.row}>
                     <TextInput
-                        value={currentLocationInput}
-                        onChangeText={setCurrentLocationInput}
-                        placeholder="Enter current location"
+                        value={pickup}
+                        onChangeText={(text) => onInputChange(text, "pickup")}
+                        placeholder="Enter Pickup location"
                         placeholderTextColor={Colors[theme].text + "80"}
-                        style={[
-                            styles.input,
-                            {
-                                flex: 1,
-                                color: Colors[theme].text,
-                                borderColor: Colors[theme].tint,
-                                backgroundColor: Colors[theme].background,
-                            },
-                        ]}
+                        style={[styles.input, { flex: 1, color: Colors[theme].text, borderColor: Colors[theme].tint, backgroundColor: Colors[theme].background }]}
                     />
                     <TouchableOpacity onPress={useCurrentLocation} style={styles.locationBtn}>
                         <Ionicons name="location-sharp" size={24} color={Colors[theme].tint} />
@@ -146,64 +204,50 @@ const SearchDestination: React.FC = () => {
                 <Text style={styles.label}>Destination</Text>
                 <TextInput
                     value={destination}
-                    onChangeText={onDestinationChange}
+                    onChangeText={(text) => onInputChange(text, "destination")}
                     placeholder="Search destination"
                     placeholderTextColor={Colors[theme].text + "80"}
-                    style={[
-                        styles.input,
-                        {
-                            color: Colors[theme].text,
-                            borderColor: Colors[theme].tint,
-                            backgroundColor: Colors[theme].background,
-                        },
-                    ]}
+                    style={[styles.input, { color: Colors[theme].text, borderColor: Colors[theme].tint, backgroundColor: Colors[theme].background }]}
                 />
-                {suggestions.length > 0 && (
-                    <View style={styles.suggestionBox}>
-                        <FlatList
-                            data={suggestions}
-                            keyExtractor={(item) => item.place_id}
-                            renderItem={({ item }) => (
-                                <TouchableOpacity
-                                    style={styles.suggestionItem}
-                                    onPress={() => onSelectAddress(item.place_id, item.description)}
-                                >
-                                    <Ionicons name="location-outline" size={18} color={Colors[theme].tint} />
-                                    <Text style={styles.suggestionText}>{item.description}</Text>
-                                </TouchableOpacity>
-                            )}
-                        />
-                    </View>
-                )}
             </View>
+
+            {/* Suggestions */}
+            {suggestions.length > 0 && (
+                <View style={[styles.suggestionBox, { backgroundColor: Colors[theme].card }]}>
+                    <FlatList
+                        data={suggestions}
+                        keyExtractor={(item) => item.place_id}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity style={styles.suggestionItem} onPress={() => onSelectAddress(item.place_id, item.description)}>
+                                <Ionicons name="location-outline" size={18} color={Colors[theme].tint} />
+                                <Text style={[styles.suggestionText, { color: Colors[theme].text }]}>{item.description}</Text>
+                            </TouchableOpacity>
+                        )}
+                    />
+                </View>
+            )}
 
             {/* Seats */}
             <View style={[styles.card, styles.shadow, { backgroundColor: Colors[theme].card }]}>
-                <Text style={styles.label}>Seats Available</Text>
+                <Text style={styles.label}>{isDriver ? "Seats Available" : "Number of People"}</Text>
                 <View style={[styles.seatRow, { backgroundColor: Colors[theme].seatBox, borderRadius: 16, padding: 10 }]}>
                     {SEAT_OPTIONS.map((n) => (
                         <TouchableOpacity
                             key={n}
-                            onPress={() => setSeats(n)}
-                            style={[
-                                styles.seat,
-                                seats === n && { backgroundColor: Colors[theme].seatSelectedBg },
-                            ]}
+                            onPress={() => handelOnSeatAvailable(n)}
+                            style={[styles.seat, seats === n && { backgroundColor: Colors[theme].seatSelectedBg }]}
                         >
-                            <Text
-                                style={{
-                                    fontWeight: "700",
-                                    color: seats === n ? Colors[theme].seatSelectedText : Colors[theme].seatText,
-                                }}
-                            >
-                                {n}
-                            </Text>
+                            <Text style={{ fontWeight: "700", color: seats === n ? Colors[theme].seatSelectedText : Colors[theme].seatText }}>{n}</Text>
                         </TouchableOpacity>
                     ))}
                 </View>
             </View>
 
-
+            {/* Action Button */}
+            <View style={styles.goButtonContainer}>
+                {isDriver ? !isOnline && <GoButton handleGoOnline={() => handleGoOnline(true)} loading={loading} /> :
+                    <RequestButton loading={loading} handleGoOnline={handleOnRequestRide} />}
+            </View>
         </View>
     );
 };
@@ -211,87 +255,19 @@ const SearchDestination: React.FC = () => {
 export default SearchDestination;
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        paddingHorizontal: 16,
-    },
-    header: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        top: 10,
-        marginBottom: 12, // reduced margin
-    },
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: "800",
-    },
-    card: {
-        borderRadius: 18,
-        padding: 16,
-        top: 14,
-        marginBottom: 16,
-    },
-    shadow: {
-        ...Platform.select({
-            ios: {
-                shadowColor: "#000",
-                shadowOpacity: 0.08,
-                shadowRadius: 12,
-                shadowOffset: { width: 0, height: 6 },
-            },
-            android: {
-                elevation: 4,
-            },
-        }),
-    },
-    label: {
-        fontSize: 13,
-        opacity: 0.7,
-        marginBottom: 6,
-    },
-    input: {
-        borderWidth: 1,
-        borderRadius: 14,
-        padding: 14,
-        fontSize: 16,
-    },
-    row: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-    },
-    locationBtn: {
-        padding: 8,
-        marginLeft: 8,
-    },
-    suggestionBox: {
-        marginTop: 8,
-        borderRadius: 14,
-        overflow: "hidden",
-    },
-    suggestionItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-        paddingVertical: 12,
-        paddingHorizontal: 10,
-    },
-    suggestionText: {
-        fontSize: 14,
-        flex: 1,
-    },
-    seatRow: {
-        flexDirection: "row",
-        gap: 10,
-        marginTop: 10,
-    },
-    seat: {
-        minWidth: 48,
-        paddingVertical: 12,
-        borderRadius: 14,
-        alignItems: "center",
-        borderWidth: 1,
-        borderColor: "#ccc",
-    },
+    container: { flex: 1, paddingHorizontal: 16 },
+    header: { flexDirection: "row", alignItems: "center", gap: 12, top: 10, marginBottom: 12 },
+    headerTitle: { fontSize: 22, fontWeight: "800" },
+    card: { borderRadius: 18, padding: 16, top: 14, marginBottom: 16 },
+    shadow: Platform.select({ ios: { shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } }, android: { elevation: 4 } }) as ViewStyle,
+    label: { fontSize: 13, opacity: 0.7, marginBottom: 6 },
+    input: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 16 },
+    row: { flexDirection: "row", alignItems: "center", gap: 10 },
+    locationBtn: { padding: 8, marginLeft: 8 },
+    suggestionBox: { marginTop: 8, borderRadius: 14, overflow: "hidden" },
+    suggestionItem: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, paddingHorizontal: 10 },
+    suggestionText: { fontSize: 14, flex: 1 },
+    seatRow: { flexDirection: "row", gap: 10, marginTop: 10 },
+    seat: { minWidth: 48, paddingVertical: 12, borderRadius: 14, alignItems: "center", borderWidth: 1, borderColor: "#ccc" },
+    goButtonContainer: { position: "absolute", bottom: 10, left: 0, right: 0, alignItems: "center", zIndex: 999, paddingVertical: 12 },
 });

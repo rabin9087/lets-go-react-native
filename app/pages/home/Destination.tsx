@@ -1,34 +1,47 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React from "react";
 import { StyleSheet, TextInput, View } from "react-native";
+import { useColorScheme } from "@/components/useColorScheme";
+import { ICoordinates } from "@/app/axios/types";
 
 interface Props {
-    currentLocation: { latitude: number; longitude: number } | null;
+    currentLocation: ICoordinates;
     destination: string;
     onDestinationChange: (text: string) => void;
+
 }
 
-const Destination = ({ destination, onDestinationChange }: Props) => {
+const Destination = ({ destination, onDestinationChange, currentLocation }: Props) => {
     const router = useRouter();
+    const theme = useColorScheme() ?? "light";
+    const isDark = theme === "dark";
 
     return (
-        <View style={styles.card}>
-            {/* Destination Input */}
-            <View style={styles.inputContainer}>
-                <Ionicons name="location" size={18} color="red" />
-                    <TextInput
-                        style={styles.input}
-                        value={destination}
-                        onPress={() => {
-                            router.push("pages/home/SearchDesitantion");
-                        }}
-                        onChangeText={onDestinationChange}
-                        placeholder="Enter destination"
-                        placeholderTextColor="#999"
-                    />
-                
-                </View>
+        <View
+            style={[
+                styles.card,
+                {
+                    backgroundColor: isDark ? "#fff" : "#000",
+                },
+            ]}
+        >
+            <Ionicons
+                name="location-sharp"
+                size={18}
+                color={isDark ? "#000" : "#fff"}
+            />
+
+            <TextInput
+                style={[
+                    styles.input,
+                    { color: isDark ? "#000" : "#fff" },
+                ]}
+                value={destination}
+                onPress={() => router.push("pages/home/SearchDesitantion")}
+                onChangeText={onDestinationChange}
+                placeholder="Where to?"
+                placeholderTextColor={isDark ? "#666" : "#aaa"}
+            />
         </View>
     );
 };
@@ -37,28 +50,24 @@ export default Destination;
 
 const styles = StyleSheet.create({
     card: {
-        backgroundColor: "#fff",
-        padding: 12,
-        borderRadius: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.15,
-        shadowRadius: 8,
-        elevation: 5,
-        width: "80%",
-    },
-    inputContainer: {
+        flex: 1,
+        height: 44,
+        borderRadius: 22,
+        paddingHorizontal: 14,
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: "#F3F3F3",
-        paddingHorizontal: 10,
-        paddingVertical: 8,
-        borderRadius: 10,
+        gap: 8,
+
+        // Shadow
+        elevation: 6,
+        shadowColor: "#000",
+        shadowOpacity: 0.2,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 3 },
     },
     input: {
-        marginLeft: 8,
         flex: 1,
-        fontSize: 16,
-        color: "#333",
+        fontSize: 15,
+        fontWeight: "500",
     },
 });

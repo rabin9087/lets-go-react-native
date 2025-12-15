@@ -8,7 +8,8 @@ export type IUpdateOnlineStatus = {
     currentLocation: ICoordinates,
     destination: ICoordinates,
     rego: string,
-    email_phone: string
+  email_phone: string
+  seatAvailable: number;
 }
 
 
