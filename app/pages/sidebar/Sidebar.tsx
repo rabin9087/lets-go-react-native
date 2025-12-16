@@ -1,6 +1,7 @@
 import { logoutUser } from "@/app/axios/user";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 import { setUser } from "@/app/store/slices/user.slice";
+import { useColorScheme } from "@/components/useColorScheme";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef } from "react";
@@ -13,7 +14,6 @@ import {
     View,
 } from "react-native";
 import { IUser } from "../user/user.types";
-import { useColorScheme } from "@/components/useColorScheme";
 
 const { width } = Dimensions.get("window");
 
@@ -50,21 +50,6 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
     const router = useRouter();
     const dispatch = useAppDispatch();
 
-    const handleOnLogout = async () => {
-        try {
-            dispatch(setUser({} as IUser));
-
-            const refreshJWT = await AsyncStorage.getItem("refreshJWT");
-            if (refreshJWT) await logoutUser();
-
-            await AsyncStorage.removeItem("accessJWT");
-            await AsyncStorage.removeItem("refreshJWT");
-
-            router.replace("/pages/user/UserSignin");
-        } catch (error) {
-            console.error("Logout failed:", error);
-        }
-    };
 
     return (
         <>
@@ -102,7 +87,7 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
                 <SidebarItem
                     label="Account"
                     onPress={() => {
-                        router.push("account");
+                        router.push("pages/sidebar/Account");
                         onClose();
                     }}
                     colors={colors}
@@ -132,14 +117,6 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
                     colors={colors}
                 />
 
-                <TouchableOpacity
-                    style={[styles.item, { borderBottomColor: colors.border }]}
-                    onPress={handleOnLogout}
-                >
-                    <Text style={[styles.logout, { color: colors.logout }]}>
-                        Logout
-                    </Text>
-                </TouchableOpacity>
             </Animated.View>
         </>
     );

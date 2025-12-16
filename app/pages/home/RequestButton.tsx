@@ -4,18 +4,18 @@ import { useColorScheme } from "@/components/useColorScheme.web";
 
 type RequestButtonProps = {
     loading: boolean;
-    handleGoOnline: () => void;
+    handleOnRequest: () => void;
 };
 
 const theme = useColorScheme() ?? "light";
 
 
-const RequestButton = ({ loading, handleGoOnline }: RequestButtonProps) => {
+const RequestButton = ({ loading, handleOnRequest }: RequestButtonProps) => {
     return (
         <View style={styles.wrapper}>
             <TouchableOpacity
                 style={styles.button}
-                onPress={handleGoOnline}
+                onPress={handleOnRequest}
                 disabled={loading}
             >
                 {loading ? (

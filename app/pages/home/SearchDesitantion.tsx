@@ -23,6 +23,7 @@ import Constants from "expo-constants";
 import Toast from "react-native-toast-message";
 import GoButton from "./GoButton";
 import RequestButton from "./RequestButton";
+import { requestRide } from "@/app/axios/ride";
 
 type LatLng = {
     latitude: number;
@@ -122,21 +123,55 @@ const SearchDestination: React.FC = () => {
     };
 
     /* -------------------- USE CURRENT LOCATION -------------------- */
-    const useCurrentLocation = () => {
-        if (!currentLocation) return;
-        setPickup("Your Current Location");
-        setPickupCoords(currentLocation);
+    const useCurrentLocation = async () => {
+        try {
+            const { status } =
+                await Location.requestForegroundPermissionsAsync();
+            if (status !== "granted") return;
+
+            const loc = await Location.getCurrentPositionAsync({});
+            const coords = {
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+            };
+
+            // Reverse geocode → full address
+            const reverse = await Location.reverseGeocodeAsync(coords);
+            const place = reverse[0];
+
+            const fullAddress = [
+                place.name,
+                place.street,
+                place.city,
+                place.region,
+                place.postalCode,
+                place.country,
+            ]
+                .filter(Boolean)
+                .join(", ");
+
+            setPickup(fullAddress);
+
+            dispatch(
+                setPickupLocation({
+                    address: fullAddress,
+                    coords,
+                })
+            );
+        } catch (err) {
+            console.error("Failed to get current location", err);
+        }
     };
 
     /* -------------------- ONLINE / REQUEST -------------------- */
-    const handleGoOnline = async (onlineStatus: boolean) => {
-        if (!pickupCoords || !destinationCoords) return;
+    const handleGoOnline = async (onlineStatus: boolean, upldateLocation?: string) => {
+        // if (!pickupCoords || !destinationCoords) return;
 
         try {
             setLoading(true);
             const payload: IUpdateOnlineStatus = {
-                currentLocation: pickupCoords,
-                destination: destinationCoords!,
+                currentLocation: pickupLocation,
+                destination: dropupLocation!,
                 email_phone: user.phone!,
                 onlineStatus,
                 rego: user?.driverProfile?.vehicle?.rego,
@@ -150,7 +185,8 @@ const SearchDestination: React.FC = () => {
                 router.push("pages/home/Map");
                 Toast.show({
                     type: "success",
-                    text1: `You are now ${onlineStatus ? "Online" : "Offline"}`,
+                    text1: upldateLocation === "" ? `You are now ${onlineStatus ? "Online" : "Offline"}` :
+                        "Location Updated",
                 });
             }
         } catch (err) {
@@ -160,9 +196,10 @@ const SearchDestination: React.FC = () => {
         }
     };
 
-    const handleOnRequestRide = () => {
-        if (!pickupCoords || !destinationCoords || !user?.phone) return;
-        const payload = { currentLocation: pickupCoords, destination: destinationCoords, email_phone: user.phone! };
+    const handleOnRequestRide = async() => {
+        // if (!pickupCoords || !destinationCoords || !user?.phone) return;
+        const payload = { currentLocation: pickupLocation, destination: dropupLocation, email_phone: user.phone!, people: seats };
+        // await requestRide(payload)
         router.push("pages/home/Map");
         Toast.show({ type: "success", text1: `Finding a Driver` });
     };
@@ -245,8 +282,11 @@ const SearchDestination: React.FC = () => {
 
             {/* Action Button */}
             <View style={styles.goButtonContainer}>
-                {isDriver ? !isOnline && <GoButton handleGoOnline={() => handleGoOnline(true)} loading={loading} /> :
-                    <RequestButton loading={loading} handleGoOnline={handleOnRequestRide} />}
+                {isDriver ?
+                    (isOnline ?
+                    <GoButton handleGoOnline={() => handleGoOnline(true, "update location")} loading={loading} updateRoute={isOnline} /> :
+                    <GoButton handleGoOnline={() => handleGoOnline(true)} loading={loading} />) :
+                    (<RequestButton loading={loading} handleOnRequest={handleOnRequestRide} />)}
             </View>
         </View>
     );

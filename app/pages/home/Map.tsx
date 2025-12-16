@@ -20,20 +20,23 @@ import {
     Text,
     TouchableOpacity,
     View,
+    Alert,
+    Linking,
+    Platform,
 } from "react-native";
 import MapView, {
     Marker,
     PROVIDER_GOOGLE,
+    PROVIDER_DEFAULT,
     Polyline,
 } from "react-native-maps";
 import Toast from "react-native-toast-message";
-
 import Menu from "../menu/Menu";
 import Sidebar from "../sidebar/Sidebar";
 import Destination from "./Destination";
+import { setDestinationLocation, setPickupLocation } from "@/app/store/slices/trip.slice";
 
-const GOOGLE_API_KEY =
-    Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
+const GOOGLE_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
 
 const Map = () => {
     /* ---------------- THEME ---------------- */
@@ -63,7 +66,10 @@ const Map = () => {
     const [routeCoords, setRouteCoords] = useState<ICoordinates[]>([]);
     const [sidebarVisible, setSidebarVisible] = useState(false);
 
-    const { user } = useAppSelector((s) => s.userInfo);
+    const { pickupLocation, dropupLocation } = useAppSelector(
+        (s) => s.tripInfo
+    );
+    const { user, navigationApp } = useAppSelector((s) => s.userInfo);
     const { drivers } = useAppSelector((s) => s.onlineDriversInfo);
     const dispatch = useAppDispatch();
 
@@ -125,10 +131,10 @@ const Map = () => {
 
     /* ---------------- ROUTE ---------------- */
     useEffect(() => {
-        if (!currentLocation || !destinationCoords) return;
+        if (!pickupLocation?.coords || !dropupLocation?.coords) return;
 
         (async () => {
-            const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${currentLocation.latitude},${currentLocation.longitude}&destination=${destinationCoords.latitude},${destinationCoords.longitude}&key=${GOOGLE_API_KEY}`;
+            const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${pickupLocation?.coords?.latitude},${pickupLocation?.coords?.longitude}&destination=${dropupLocation?.coords?.latitude},${dropupLocation?.coords?.longitude}&&alternatives=true&&mode=driving&key=${GOOGLE_API_KEY}`;
 
             const res = await fetch(url);
             const data = await res.json();
@@ -137,15 +143,50 @@ const Map = () => {
                 const points = polyline.decode(
                     data.routes[0].overview_polyline.points
                 );
-                setRouteCoords(
-                    points.map(([lat, lng]) => ({
-                        latitude: lat,
-                        longitude: lng,
-                    }))
-                );
+                const coords = points.map(([lat, lng]) => ({
+                    latitude: lat,
+                    longitude: lng,
+                }));
+                setRouteCoords(coords);
+
+                mapRef.current?.fitToCoordinates(coords, {
+                    edgePadding: {
+                        top: 120,
+                        bottom: 120,
+                        left: 80,
+                        right: 80,
+                    },
+                    animated: true,
+                });
             }
         })();
-    }, [currentLocation, destinationCoords]);
+    }, [pickupLocation, dropupLocation]);
+
+    const openMaps = () => {
+        if (!pickupLocation?.coords || !dropupLocation?.coords) return;
+        setLoading(true)
+        const origin = `${pickupLocation.address || pickupLocation.coords},${pickupLocation.address || pickupLocation.coords}`;
+        const destination = `${dropupLocation.address || dropupLocation.coords},${dropupLocation.address || dropupLocation.coords}`;
+
+        const appleMapsUrl = `http://maps.apple.com/?saddr=${origin}&daddr=${destination}&dirflg=d`;
+        const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+        const webUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+
+        const url = navigationApp === "apple" ? appleMapsUrl : googleMapsUrl;
+
+        Linking.canOpenURL(url)
+            .then((supported) => {
+                if (supported) {
+                    Linking.openURL(url);
+                } else {
+                    Linking.openURL(webUrl);
+                }
+            })
+            .catch(() => {
+                Alert.alert("Error", "Unable to open Maps");
+            });
+        setLoading(false)
+    };
 
     /* ---------------- GO ONLINE / OFFLINE ---------------- */
     const handleGoOnline = async (onlineStatus: boolean) => {
@@ -155,8 +196,8 @@ const Map = () => {
             setLoading(true);
 
             const payload: IUpdateOnlineStatus = {
-                currentLocation,
-                destination: destinationCoords!,
+                currentLocation: pickupLocation,
+                destination: dropupLocation!,
                 email_phone: user.phone!,
                 onlineStatus,
                 rego: "AS87GH",
@@ -169,7 +210,8 @@ const Map = () => {
                 dispatch(setDriverOnlineStatus(onlineStatus));
                 Toast.show({
                     type: "success",
-                    text1: `You are now ${onlineStatus ? "Online" : "Offline"}`,
+                    text1: `You are now ${onlineStatus ? "Online" : "Offline"
+                        }`,
                 });
             }
         } catch (err) {
@@ -198,28 +240,28 @@ const Map = () => {
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             {/* Top Bar */}
-            
             <View style={styles.topBar}>
                 <TouchableOpacity onPress={() => setSidebarVisible(true)}>
                     <Menu />
                 </TouchableOpacity>
 
                 <Destination
-                    currentLocation={currentLocation}
-                    destination={destination}
                     onDestinationChange={setDestination}
                 />
             </View>
 
-            <Sidebar visible={sidebarVisible} onClose={() => setSidebarVisible(false)} />
+            <Sidebar
+                visible={sidebarVisible}
+                onClose={() => setSidebarVisible(false)}
+            />
 
             {/* Map */}
             <MapView
                 ref={mapRef}
-                provider={PROVIDER_GOOGLE}
-                style={[
-                    styles.map,
-                ]}
+                provider={
+                    navigationApp === "google" ? PROVIDER_GOOGLE : PROVIDER_DEFAULT
+                }
+                style={styles.map}
                 initialRegion={{
                     ...currentLocation,
                     latitudeDelta: 0.01,
@@ -243,8 +285,18 @@ const Map = () => {
                         )
                 )}
 
-                {destinationCoords && (
-                    <Marker coordinate={destinationCoords} pinColor="red" />
+                {pickupLocation.coords && (
+                    <Marker
+                        coordinate={pickupLocation.coords as ICoordinates}
+                        pinColor="green"
+                    />
+                )}
+
+                {dropupLocation.coords && (
+                    <Marker
+                        coordinate={dropupLocation.coords as ICoordinates}
+                        pinColor="red"
+                    />
                 )}
 
                 {routeCoords.length > 0 && (
@@ -261,27 +313,42 @@ const Map = () => {
                 onPress={recenterMap}
                 style={[styles.recenterBtn, { backgroundColor: colors.recenterBg }]}
             >
-                <Ionicons
-                    name="locate-outline"
-                    size={24}
-                    color={colors.text}
-                />
+                <Ionicons name="locate-outline" size={24} color={colors.text} />
             </TouchableOpacity>
 
-            {/* Go Offline */}
-            {isDriver && isOnline && (
-                <View style={styles.goButtonContainer}>
+            {/* Bottom Buttons */}
+            {isDriver && (
+                <View style={styles.bottomBtnWrapper}>
                     <TouchableOpacity
-                        onPress={() => handleGoOnline(false)}
+                        onPress={() => handleGoOnline(!isOnline)}
                         disabled={loading}
-                        style={[styles.offlineBtn, { backgroundColor: colors.danger }]}
+                        style={[
+                            styles.onlineBtn,
+                            { backgroundColor: isOnline ? colors.danger : colors.tint },
+                        ]}
                     >
                         {loading ? (
                             <ActivityIndicator color="#fff" />
                         ) : (
-                            <Text style={styles.offlineText}>Go Offline</Text>
+                            <Text style={styles.onlineBtnText}>
+                                {isOnline ? "Go Offline" : "Go Online"}
+                            </Text>
                         )}
                     </TouchableOpacity>
+
+                    {isOnline && pickupLocation.address && dropupLocation.address && (
+                        <TouchableOpacity
+                            disabled= {loading}
+                            style={styles.startBtn}
+                            onPress={openMaps}
+                            activeOpacity={0.85}
+                        >
+                            <View style={styles.directionRow}>
+                                <Ionicons name="navigate" size={18} color="#fff" />
+                                <Text style={styles.directionText}>Start</Text>
+                            </View>
+                        </TouchableOpacity>
+                    )}
                 </View>
             )}
         </View>
@@ -292,8 +359,8 @@ export default Map;
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    map: { flex: 1 }
-    ,
+    map: { flex: 1 },
+
     topBar: {
         position: "absolute",
         top: 20,
@@ -305,32 +372,73 @@ const styles = StyleSheet.create({
         gap: 12,
     },
 
-    goButtonContainer: {
+    bottomBtnWrapper: {
         position: "absolute",
-        bottom: 16,
-        left: 0,
-        right: 0,
+        bottom: 20,
+        left: 16,
+        right: 16,
+        flexDirection: "row",
+        justifyContent: "space-between",
         alignItems: "center",
+        zIndex: 10,
+    },
+
+    onlineBtn: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 30,
+        marginRight: 12,
+        justifyContent: "center",
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOpacity: 0.15,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 5,
+    },
+
+    onlineBtnText: {
+        color: "#fff",
+        fontSize: 16,
+        fontWeight: "600",
+    },
+
+    startBtn: {
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 30,
+        backgroundColor: "#16a34a",
+        justifyContent: "center",
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOpacity: 0.2,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 6,
+    },
+
+    directionRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+    },
+
+    directionText: {
+        color: "#fff",
+        fontSize: 15,
+        fontWeight: "600",
     },
 
     recenterBtn: {
         position: "absolute",
-        bottom: 50,
+        bottom: 100,
         right: 16,
         padding: 14,
         borderRadius: 30,
         elevation: 4,
-    },
-
-    offlineBtn: {
-        paddingVertical: 14,
-        paddingHorizontal: 32,
-        borderRadius: 30,
-    },
-
-    offlineText: {
-        color: "#fff",
-        fontSize: 16,
-        fontWeight: "600",
+        shadowColor: "#000",
+        shadowOpacity: 0.15,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 4 },
     },
 });

@@ -1,28 +1,26 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { StyleSheet, TextInput, View } from "react-native";
+import { StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
 import { useColorScheme } from "@/components/useColorScheme";
-import { ICoordinates } from "@/app/axios/types";
+import { useAppSelector } from "@/app/store/hooks";
 
 interface Props {
-    currentLocation: ICoordinates;
-    destination: string;
     onDestinationChange: (text: string) => void;
-
 }
 
-const Destination = ({ destination, onDestinationChange, currentLocation }: Props) => {
+const Destination = ({ onDestinationChange }: Props) => {
     const router = useRouter();
     const theme = useColorScheme() ?? "light";
     const isDark = theme === "dark";
+    const { dropupLocation } = useAppSelector((s) => s.tripInfo);
 
     return (
-        <View
+        <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => router.push("pages/home/SearchDesitantion")}
             style={[
                 styles.card,
-                {
-                    backgroundColor: isDark ? "#fff" : "#000",
-                },
+                { backgroundColor: isDark ? "#fff" : "#000" },
             ]}
         >
             <Ionicons
@@ -32,17 +30,15 @@ const Destination = ({ destination, onDestinationChange, currentLocation }: Prop
             />
 
             <TextInput
-                style={[
-                    styles.input,
-                    { color: isDark ? "#000" : "#fff" },
-                ]}
-                value={destination}
-                onPress={() => router.push("pages/home/SearchDesitantion")}
+                style={[styles.input, { color: isDark ? "#000" : "#fff" }]}
+                value={dropupLocation?.address || ""}
                 onChangeText={onDestinationChange}
                 placeholder="Where to?"
                 placeholderTextColor={isDark ? "#666" : "#aaa"}
+                editable={false} // prevents focusing and typing
+                pointerEvents="none" // ensures touch goes to TouchableOpacity
             />
-        </View>
+        </TouchableOpacity>
     );
 };
 
@@ -57,8 +53,6 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         alignItems: "center",
         gap: 8,
-
-        // Shadow
         elevation: 6,
         shadowColor: "#000",
         shadowOpacity: 0.2,

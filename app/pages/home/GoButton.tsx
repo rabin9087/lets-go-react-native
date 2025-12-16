@@ -4,11 +4,12 @@ import { useColorScheme } from "@/components/useColorScheme.web";
 type GoButtonProps = {
     loading: boolean;
     handleGoOnline: () => void;
+    updateRoute? : boolean
 };
 
 const theme = useColorScheme() ?? "light";
 
-const GoButton = ({ loading, handleGoOnline }: GoButtonProps) => {
+const GoButton = ({ loading, handleGoOnline, updateRoute }: GoButtonProps) => {
     return (
         <View style={styles.wrapper}>
             <TouchableOpacity
@@ -19,7 +20,7 @@ const GoButton = ({ loading, handleGoOnline }: GoButtonProps) => {
                 {loading ? (
                     <ActivityIndicator color={theme ? "#fff" : "#000"} />
                 ) : (
-                    <Text style={styles.text}>Let’s GO</Text>
+                        updateRoute ? <Text style={styles.text}>Update </Text> :  <Text style={styles.text}>Let’s GO</Text>
                 )}
             </TouchableOpacity>
         </View>

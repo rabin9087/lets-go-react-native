@@ -1,11 +1,12 @@
 import { IUser } from '@/app/pages/user/user.types';
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { Platform } from 'react-native';
 
 export const defaultUser: Partial<IUser> = {
     _id: "",
     name: "",
     email: "",
-     phone: "",
+    phone: "",
     role: "",
     profileImage: "",
     status: "active", 
@@ -13,12 +14,17 @@ export const defaultUser: Partial<IUser> = {
   
 } as const;
 
+export type NavigationApp = "google" | "apple";
+
+
 export type TInitialState = {
-user: Partial<IUser>
+    user: Partial<IUser>,
+    navigationApp: NavigationApp | "ios" | "android" | "windows" | "macos" | "web"
 }
 
 export const initialState: TInitialState = {
-  user: defaultUser
+    user: defaultUser,
+    navigationApp: Platform.OS
 };
 
 const userSlice = createSlice({
@@ -32,10 +38,13 @@ const userSlice = createSlice({
           if (state.user.driverProfile) {
                 state.user.driverProfile.isOnline = payload;
             }
+      },
+      setNavigationApp: (state, {payload}: PayloadAction<NavigationApp>) => {
+          state.navigationApp = payload
     },
   },
 });
 
-export const { setUser, setDriverOnlineStatus } = userSlice.actions;
+export const { setUser, setDriverOnlineStatus, setNavigationApp } = userSlice.actions;
 
 export default userSlice.reducer;

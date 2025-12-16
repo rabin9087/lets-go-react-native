@@ -5,7 +5,7 @@ import { IAxiosProcessParams, TAxiosProcessor } from "./types";
 
 
 export const rootApi = Constants.expoConfig?.extra?.EXPO_BASE_URL ?? "";
-export const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
+// export const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
 
 // Use your environment variables or fallback URLs
 // export const rootApi = Constants.expoConfig?.extra?.EXPO_BASE_URL ?? "";

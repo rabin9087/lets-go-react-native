@@ -1,14 +1,10 @@
 // store/slices/trip.slice.ts
+import { ICoordinates } from "@/app/axios/types";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
-
-export interface LatLng {
-  latitude: number;
-  longitude: number;
-}
 
 export interface Location {
   address: string;
-  coords: LatLng | null;
+  coords: ICoordinates | null;
 }
 
 export interface TripState {
