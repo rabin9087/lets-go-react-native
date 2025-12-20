@@ -11,6 +11,7 @@ export type IUpdateOnlineStatus = {
     rego: string,
   email_phone: string
   seatAvailable: number;
+  routeGeo?: ICoordinates[]
 }
 
 

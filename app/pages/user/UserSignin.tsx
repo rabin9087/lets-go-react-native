@@ -27,23 +27,15 @@ export interface ILoginPayload {
 
 const useLogin = () =>
     useMutation<IResponse, Error, ILoginPayload>({
-        mutationFn: async (data: ILoginPayload) => {
+        mutationFn: async (data) => {
             const res = await loginUser(data);
-
-            if (!res) {
-                throw new Error("Login failed: no response from server");
-            }
-
-            return res; // now TypeScript knows res is IUserLogin
+            if (!res) throw new Error("Login failed");
+            return res;
         },
     });
 
-
 const LoginForm = () => {
-    const [input, setInput] = React.useState({
-        email_phone: "",
-        password: "",
-    });
+    const [input, setInput] = React.useState({email_phone: "", password: ""});
     const [errorMsg, setErrorMsg] = React.useState("");
     // const dispatch = useAppDispatch()
     const router = useRouter();
@@ -60,29 +52,25 @@ const LoginForm = () => {
 
     const handleSubmit = () => {
         setErrorMsg("");
-
         const { email_phone, password } = input;
 
         if (!email_phone || !password) {
-            setErrorMsg("All fields are required.");
+            setErrorMsg("All fields are required");
             return;
         }
 
         loginMutation.mutate(input, {
-            onSuccess: async (data: IResponse) => {
-
-                // 1. Save user in Redux
+            onSuccess: async (data) => {
                 dispatch(setUser(data.user as IUser));
-                // 2. Save tokens in storage
-                if (data?.tokens?.accessJWT && data?.tokens?.refreshJWT) {
-                    await AsyncStorage.setItem("accessJWT", data.tokens.accessJWT as string);
-                    await AsyncStorage.setItem("refreshJWT", data.tokens.refreshJWT as string);
+
+                if (data.tokens?.accessJWT && data.tokens?.refreshJWT) {
+                    await AsyncStorage.multiSet([
+                        ["accessJWT", data.tokens.accessJWT],
+                        ["refreshJWT", data.tokens.refreshJWT],
+                    ]);
                 }
 
-                if (data.user as IUser) {
-                    // 3. Navigate to Map page (or any protected page)
-                    data.user?._id && router.replace("/pages/home/Map");
-                }
+                router.replace("/pages/home/Map");
             },
             onError: (err: any) => {
                 setErrorMsg(err?.response?.data?.message || "Login failed");
@@ -90,31 +78,37 @@ const LoginForm = () => {
         });
     };
 
-    useEffect(() => {
-        const checkAutoLogin = async () => {
-            try {
-                if (user?._id) {
-                    return router.replace("/pages/home/Map");
-                }
-                const refreshJWT = await AsyncStorage.getItem("refreshJWT");
+    const handleAutoLogin = async () => {
+        try {
+            const refreshJWT = await AsyncStorage.getItem("refreshJWT");
+            if (!refreshJWT) return;
 
-                if (refreshJWT) {
-                    const user = await autoLoginUser(); // should call your API to verify refresh token
-                    if (user?.status === "success") {
-                        dispatch(setUser(user.data?.user as IUser));
-                        if (user.accessJWT) {
-                            await AsyncStorage.setItem("accessJWT", user.accessJWT as string);
-                        }
-                        router.replace("/pages/home/Map");
-                    }
+            const res = await autoLoginUser();
+            console.log("AUTO LOGIN RES:", res);
+
+            if (res?.status === "success" && res?.data?.user?._id) {
+                dispatch(setUser(res?.data?.user as IUser));
+
+                if (res?.data.tokens?.accessJWT) {
+                    await AsyncStorage.setItem("accessJWT", res.data.tokens.accessJWT);
                 }
-            } catch (error) {
-                console.error("Auto login failed:", error);
+
+                router.replace("/pages/home/Map");
             }
-        };
+        } catch (err) {
+            console.log("Auto-login failed");
+            await AsyncStorage.multiRemove(["accessJWT", "refreshJWT"]);
+        }
+    };
 
-        checkAutoLogin();
-    }, [dispatch, router]);
+    useEffect(() => {
+        if (!user?._id) {
+            handleAutoLogin();
+        } else {
+            router.replace("/pages/home/Map");
+
+        }
+    }, []);
 
     const fields = [
         {

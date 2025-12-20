@@ -13,23 +13,6 @@ export interface IAxiosProcessParams {
 // API return type
 export type TAxiosProcessor = Promise<serverReturnDataType>;
 
-export interface ICartHistory {
-  amount: number;
-  deliveryStatus: string;
-  paymentStatus: string;
-  orderNumber: number;
-  orderType: string;
-  purchasedAt: Date;
-}
-
-export type createUserParams = {
-  fName: string;
-  lName: string;
-  phone: string;
-  email: string;
-  password: string;
-};
-
 export type signInUserParams = {
   email_phone: string;
   password: string;
@@ -61,16 +44,6 @@ export type LocationState = {
   };
 };
 
-// Category
-export type ICategoryTypes = {
-  _id?: string;
-  status?: string;
-  name: string;
-  alternativeName?: string;
-  slug?: string;
-  description?: string;
-};
-
 export enum Status {
   ACTIVE = "ACTIVE",
   INACTIVE = "INACTIVE",
@@ -86,6 +59,7 @@ export type ICoordinates = {
     latitude: number;
     longitude: number
 }
+
 export type IDRIVERRIDE = {
   driverId: string;
   phone: string;
@@ -103,9 +77,9 @@ export type IDRIVERRIDE = {
 }
 
 export type IResponse = {
-    tokens?: {
-        accessJWT: String,
-        refreshJWT: String,
+  tokens?: {
+        accessJWT: string,
+        refreshJWT: string,
         },
   user?: Partial<IUser>,
   updatedRide?: any,
@@ -118,22 +92,5 @@ export type serverReturnDataType = {
   status: "success" | "error";
   message?: string;
   inserted?: number;
-  result?: [];
-  user?: IResponse;
   data?: IResponse;
-  accessJWT?: string;
-  users?: IUser[];
-  userEmail_Phone?: string;
-  tokens?: { accessJWT: string; refreshJWT: string };
-  clientSecret?: string;
-  paymentIntentId?: string;
-  customerSessionClientSecret?: string;
-  amount: [];
-  pagination?: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
-
 };

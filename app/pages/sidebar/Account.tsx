@@ -19,6 +19,7 @@ import { logoutUser } from "@/app/axios/user";
 import { IUser } from "../user/user.types";
 import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
 import Toast from "react-native-toast-message";
+import { resetTrip } from "@/app/store/slices/trip.slice";
 
 const Account = () => {
     const theme = useColorScheme() ?? "light";
@@ -28,7 +29,7 @@ const Account = () => {
     const { user, navigationApp } = useAppSelector(
         (s) => s.userInfo
     );
-    const { pickupLocation, dropupLocation, seatAvailable } = useAppSelector(
+    const { pickupLocation, dropoffLocation, seatAvailable } = useAppSelector(
         (s) => s.tripInfo
     );
 
@@ -36,7 +37,7 @@ const Account = () => {
         console.log("Setting online status:", onlineStatus);
         const payload: IUpdateOnlineStatus = {
             currentLocation: pickupLocation,
-            destination: dropupLocation!,
+            destination: dropoffLocation!,
             email_phone: user.phone!,
             onlineStatus,
             rego: user?.driverProfile?.vehicle?.rego,
@@ -52,8 +53,6 @@ const Account = () => {
             });
         }
     };
-
-
 
     const handleOnLogout = async () => {
 
@@ -81,6 +80,7 @@ const Account = () => {
 
             // Clear user state
             dispatch(setUser({} as IUser));
+            dispatch(resetTrip());
 
             // Logout from backend if refresh token exists
             const refreshJWT = await AsyncStorage.getItem("refreshJWT");
@@ -91,7 +91,7 @@ const Account = () => {
             // Remove tokens from AsyncStorage
             await AsyncStorage.removeItem("accessJWT");
             await AsyncStorage.removeItem("refreshJWT");
-
+            
             // Navigate to login page
             router.replace("/pages/user/UserSignin");
         } catch (error) {

@@ -12,8 +12,7 @@ const Destination = ({ onDestinationChange }: Props) => {
     const router = useRouter();
     const theme = useColorScheme() ?? "light";
     const isDark = theme === "dark";
-    const { dropupLocation } = useAppSelector((s) => s.tripInfo);
-
+    const { dropoffLocation } = useAppSelector((s) => s.tripInfo);
     return (
         <TouchableOpacity
             activeOpacity={0.8}
@@ -31,7 +30,7 @@ const Destination = ({ onDestinationChange }: Props) => {
 
             <TextInput
                 style={[styles.input, { color: isDark ? "#000" : "#fff" }]}
-                value={dropupLocation?.address || ""}
+                value={dropoffLocation?.address}
                 onChangeText={onDestinationChange}
                 placeholder="Where to?"
                 placeholderTextColor={isDark ? "#666" : "#aaa"}

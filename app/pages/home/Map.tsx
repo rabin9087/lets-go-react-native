@@ -1,109 +1,74 @@
+import MapView, { Marker, Polyline } from "react-native-maps";
 import {
-    IUpdateOnlineStatus,
-    getAllOnlineDrivers,
-    updateOnlineStatus,
-} from "@/app/axios/driver";
-import { ICoordinates, IDRIVERRIDE } from "@/app/axios/types";
-import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { setOnlineDrivers } from "@/app/store/slices/onlineDrivers.slice";
-import { setDriverOnlineStatus } from "@/app/store/slices/user.slice";
-import { useColorScheme } from "@/components/useColorScheme.web";
+    View,
+    StyleSheet,
+    TouchableOpacity,
+    Text,
+    ActivityIndicator,
+    Linking,
+    Alert,
+} from "react-native";
+import { useRef, useState, useMemo, useEffect } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import polyline from "@mapbox/polyline";
-import { useQuery } from "@tanstack/react-query";
 import Constants from "expo-constants";
 import * as Location from "expo-location";
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-    ActivityIndicator,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
-    Alert,
-    Linking,
-    Platform,
-} from "react-native";
-import MapView, {
-    Marker,
-    PROVIDER_GOOGLE,
-    PROVIDER_DEFAULT,
-    Polyline,
-} from "react-native-maps";
 import Toast from "react-native-toast-message";
+
+import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
+import { setDistance, setDuration, setRouteGeo } from "@/app/store/slices/trip.slice";
+import { setDriverOnlineStatus, setUser } from "@/app/store/slices/user.slice";
+import { connectSocket, disConnectSocket, goOnlineDriverSocket, socket } from "@/app/utils/socket";
+
 import Menu from "../menu/Menu";
 import Sidebar from "../sidebar/Sidebar";
 import Destination from "./Destination";
-import { setDestinationLocation, setPickupLocation } from "@/app/store/slices/trip.slice";
+import IncomingRideModal from "../rides/IncomingRideModal";
+import RouteInfoCard from "../components/RouteInfoCard";
+import MapDrivers from "../components/MapDrivers";
+import { useIncomingRide } from "../sockets/Sockets";
+
+import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
+import { ICoordinates } from "@/app/axios/types";
+import { setIsSocketConnected } from "@/app/store/slices/socketInfo.slice";
 
 const GOOGLE_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
 
-const Map = () => {
-    /* ---------------- THEME ---------------- */
-    const theme = useColorScheme() ?? "light";
-    const isDark = theme === "dark";
-
-    const colors = useMemo(
-        () => ({
-            background: isDark ? "#000" : "#fff",
-            card: isDark ? "#1C1C1E" : "#fff",
-            text: isDark ? "#fff" : "#000",
-            tint: isDark ? "#fff" : "#007AFF",
-            danger: "#ff3b30",
-            route: "#007AFF",
-            recenterBg: isDark ? "#1C1C1E" : "#fff",
-        }),
-        [isDark]
-    );
-
-    /* ---------------- STATE ---------------- */
-    const [loading, setLoading] = useState(false);
-    const [currentLocation, setCurrentLocation] =
-        useState<ICoordinates | null>(null);
-    const [destination, setDestination] = useState("");
-    const [destinationCoords, setDestinationCoords] =
-        useState<ICoordinates | null>(null);
-    const [routeCoords, setRouteCoords] = useState<ICoordinates[]>([]);
-    const [sidebarVisible, setSidebarVisible] = useState(false);
-
-    const { pickupLocation, dropupLocation } = useAppSelector(
-        (s) => s.tripInfo
-    );
-    const { user, navigationApp } = useAppSelector((s) => s.userInfo);
-    const { drivers } = useAppSelector((s) => s.onlineDriversInfo);
+export default function Map() {
+    const mapRef = useRef<MapView>(null);
     const dispatch = useAppDispatch();
 
-    const mapRef = useRef<MapView>(null);
+    const { user, navigationApp } = useAppSelector((s) => s.userInfo);
+    const { pickupLocation, dropoffLocation, incomingRide, routeInfo } = useAppSelector((s) => s.tripInfo);
+    const { isSocketConnected } = useAppSelector((s) => s.socketInfo);
 
-    /* ---------------- FLAGS ---------------- */
+    const [currentLocation, setCurrentLocation] = useState<ICoordinates | null>(null);
+    const [destination, setDestination] = useState("");
+    const [destinationCoords, setDestinationCoords] = useState<ICoordinates | null>(null);
+    const [routeCoords, setRouteCoords] = useState<ICoordinates[]>([]);
+    const [sidebarVisible, setSidebarVisible] = useState(false);
+    const [loading, setLoading] = useState(false);
+
     const isDriver = user?.role === "driver";
     const isOnline = user?.driverProfile?.isOnline;
 
-    /* ---------------- FETCH ONLINE DRIVERS ---------------- */
-    const shouldFetchDrivers =
-        !isDriver && !!currentLocation && !!destinationCoords;
+    const theme = "light";
+    const colors = useMemo(() => ({
+        background: "#fff",
+        card: "#fff",
+        text: "#000",
+        tint: "#007AFF",
+        danger: "#ff3b30",
+        route: "#007AFF",
+        recenterBg: "#fff",
+    }), [theme]);
 
-    const { data: allDrivers = [] } = useQuery<IDRIVERRIDE[]>({
-        queryKey: ["allOnlineDrivers", currentLocation, destinationCoords],
-        queryFn: () =>
-            getAllOnlineDrivers(
-                currentLocation as ICoordinates,
-                destinationCoords as ICoordinates
-            ),
-        enabled: shouldFetchDrivers,
-    });
-
-    useEffect(() => {
-        if (allDrivers.length) {
-            dispatch(setOnlineDrivers(allDrivers));
-        }
-    }, [allDrivers, dispatch]);
+    useIncomingRide();
 
     /* ---------------- LOCATION ---------------- */
     useEffect(() => {
         (async () => {
-            const { status } =
-                await Location.requestForegroundPermissionsAsync();
+            const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== "granted") return;
 
             const loc = await Location.getCurrentPositionAsync({});
@@ -117,7 +82,6 @@ const Map = () => {
     /* ---------------- DESTINATION → COORDS ---------------- */
     useEffect(() => {
         if (!destination) return;
-
         (async () => {
             const result = await Location.geocodeAsync(destination);
             if (result.length) {
@@ -129,89 +93,111 @@ const Map = () => {
         })();
     }, [destination]);
 
-    /* ---------------- ROUTE ---------------- */
+    /* ---------------- FETCH ROUTE ---------------- */
     useEffect(() => {
-        if (!pickupLocation?.coords || !dropupLocation?.coords) return;
-
-        (async () => {
-            const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${pickupLocation?.coords?.latitude},${pickupLocation?.coords?.longitude}&destination=${dropupLocation?.coords?.latitude},${dropupLocation?.coords?.longitude}&&alternatives=true&&mode=driving&key=${GOOGLE_API_KEY}`;
-
+        const fetchRoute = async (origin: ICoordinates, dest: ICoordinates) => {
+            const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.latitude},${origin.longitude}&destination=${dest.latitude},${dest.longitude}&mode=driving&key=${GOOGLE_API_KEY}`;
             const res = await fetch(url);
             const data = await res.json();
 
             if (data.routes?.length) {
-                const points = polyline.decode(
-                    data.routes[0].overview_polyline.points
-                );
-                const coords = points.map(([lat, lng]) => ({
-                    latitude: lat,
-                    longitude: lng,
-                }));
+                const points = polyline.decode(data.routes[0].overview_polyline.points);
+                const coords = points.map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
                 setRouteCoords(coords);
+                dispatch(setRouteGeo(coords));
 
                 mapRef.current?.fitToCoordinates(coords, {
-                    edgePadding: {
-                        top: 120,
-                        bottom: 120,
-                        left: 80,
-                        right: 80,
-                    },
+                    edgePadding: { top: 120, bottom: 120, left: 80, right: 80 },
                     animated: true,
                 });
+
+                const leg = data.routes[0].legs[0];
+                dispatch(setDistance(leg.distance.text));
+                dispatch(setDuration(leg.duration.text));
             }
-        })();
-    }, [pickupLocation, dropupLocation]);
+        };
 
+        if (incomingRide?._id) {
+            incomingRide.pickupLocation?.coords &&
+                incomingRide.dropoffLocation?.coords &&
+                fetchRoute(incomingRide.pickupLocation.coords, incomingRide.dropoffLocation.coords);
+        } else if (pickupLocation?.coords && dropoffLocation?.coords) {
+            fetchRoute(pickupLocation.coords, dropoffLocation.coords);
+        }
+    }, [pickupLocation, dropoffLocation, incomingRide]);
+
+    /* ---------------- RECENTER ---------------- */
+    const recenterMap = () => {
+        if (!mapRef.current || !currentLocation) return;
+        mapRef.current.animateToRegion(
+            { ...currentLocation, latitudeDelta: 0.01, longitudeDelta: 0.01 },
+            500
+        );
+    };
+
+    /* ---------------- OPEN NAVIGATION ---------------- */
     const openMaps = () => {
-        if (!pickupLocation?.coords || !dropupLocation?.coords) return;
-        setLoading(true)
-        const origin = `${pickupLocation.address || pickupLocation.coords},${pickupLocation.address || pickupLocation.coords}`;
-        const destination = `${dropupLocation.address || dropupLocation.coords},${dropupLocation.address || dropupLocation.coords}`;
+        if (!pickupLocation?.coords || !dropoffLocation?.coords) return;
 
-        const appleMapsUrl = `http://maps.apple.com/?saddr=${origin}&daddr=${destination}&dirflg=d`;
-        const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
-        const webUrl = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+        setLoading(true);
 
-        const url = navigationApp === "apple" ? appleMapsUrl : googleMapsUrl;
+        const origin = `${pickupLocation.coords.latitude},${pickupLocation.coords.longitude}`;
+        const dest = `${dropoffLocation.coords.latitude},${dropoffLocation.coords.longitude}`;
+
+        let url = "";
+
+        if (navigationApp === "apple") {
+            // Apple Maps URL scheme
+            url = `http://maps.apple.com/?saddr=${origin}&daddr=${dest}&dirflg=d`;
+        } else {
+            // Google Maps URL
+            url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}&travelmode=driving`;
+        }
 
         Linking.canOpenURL(url)
             .then((supported) => {
                 if (supported) {
                     Linking.openURL(url);
                 } else {
-                    Linking.openURL(webUrl);
+                    Alert.alert("Error", `Cannot open ${navigationApp === "apple" ? "Apple Maps" : "Google Maps"}`);
                 }
             })
-            .catch(() => {
-                Alert.alert("Error", "Unable to open Maps");
-            });
-        setLoading(false)
+            .finally(() => setLoading(false));
     };
 
     /* ---------------- GO ONLINE / OFFLINE ---------------- */
     const handleGoOnline = async (onlineStatus: boolean) => {
-        if (!currentLocation) return;
-
+        // if (!currentLocation) return;
         try {
             setLoading(true);
-
             const payload: IUpdateOnlineStatus = {
                 currentLocation: pickupLocation,
-                destination: dropupLocation!,
+                destination: dropoffLocation!,
                 email_phone: user.phone!,
                 onlineStatus,
                 rego: "AS87GH",
                 seatAvailable: 0,
+                routeGeo: routeInfo.routeGeo?.map(({ longitude, latitude }) => ({ longitude, latitude })),
             };
 
-            const response = await updateOnlineStatus(payload);
+            if (onlineStatus) {
+                !isSocketConnected && connectSocket();
+                socket.on("connect", () => {
+                    console.log("🟢 Connected to socket:", socket.id);
+                });
+                dispatch(setIsSocketConnected(true))
+                goOnlineDriverSocket(user?._id as string)
+            } else {
+                isSocketConnected && disConnectSocket()
+                dispatch(setIsSocketConnected(false))
+            }
 
+            const response = await updateOnlineStatus(payload);
             if (response?.status === "success") {
                 dispatch(setDriverOnlineStatus(onlineStatus));
                 Toast.show({
                     type: "success",
-                    text1: `You are now ${onlineStatus ? "Online" : "Offline"
-                        }`,
+                    text1: `You are now ${onlineStatus ? "Online" : "Offline"}`,
                 });
             }
         } catch (err) {
@@ -221,128 +207,62 @@ const Map = () => {
         }
     };
 
-    /* ---------------- RECENTER ---------------- */
-    const recenterMap = () => {
-        if (!mapRef.current || !currentLocation) return;
-
-        mapRef.current.animateToRegion(
-            {
-                ...currentLocation,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-            },
-            500
-        );
-    };
-
     if (!currentLocation) return <View style={{ flex: 1 }} />;
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-            {/* Top Bar */}
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
+            {/* ---------------- Top Bar ---------------- */}
             <View style={styles.topBar}>
                 <TouchableOpacity onPress={() => setSidebarVisible(true)}>
                     <Menu />
                 </TouchableOpacity>
 
-                <Destination
-                    onDestinationChange={setDestination}
-                />
+                <Destination onDestinationChange={setDestination} />
             </View>
 
-            <Sidebar
-                visible={sidebarVisible}
-                onClose={() => setSidebarVisible(false)}
-            />
+            <Sidebar visible={sidebarVisible} onClose={() => setSidebarVisible(false)} />
 
-            {/* Map */}
+            {/* ---------------- MAP ---------------- */}
             <MapView
                 ref={mapRef}
-                provider={
-                    navigationApp === "google" ? PROVIDER_GOOGLE : PROVIDER_DEFAULT
-                }
-                style={styles.map}
-                initialRegion={{
-                    ...currentLocation,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                }}
+                style={{ flex: 1 }}
                 showsUserLocation
+                showsMyLocationButton={false} // <-- disable default recenter button
+
+                initialRegion={{ ...currentLocation, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
             >
-                {drivers.map(
-                    (driver, index) =>
-                        driver.currentLocation && (
-                            <Marker
-                                key={index}
-                                coordinate={driver.currentLocation}
-                            >
-                                <Ionicons
-                                    name="car-sport"
-                                    size={34}
-                                    color={colors.text}
-                                />
-                            </Marker>
-                        )
-                )}
+                <MapDrivers color="red"/>
+                {pickupLocation.coords && <Marker coordinate={pickupLocation.coords} pinColor="green" />}
+                {dropoffLocation.coords && <Marker coordinate={dropoffLocation.coords} pinColor="red" />}
+                {incomingRide?.pickupLocation.coords && <Marker coordinate={incomingRide?.pickupLocation.coords} pinColor="blue" />}
 
-                {pickupLocation.coords && (
-                    <Marker
-                        coordinate={pickupLocation.coords as ICoordinates}
-                        pinColor="green"
-                    />
-                )}
-
-                {dropupLocation.coords && (
-                    <Marker
-                        coordinate={dropupLocation.coords as ICoordinates}
-                        pinColor="red"
-                    />
-                )}
-
-                {routeCoords.length > 0 && (
-                    <Polyline
-                        coordinates={routeCoords}
-                        strokeWidth={4}
-                        strokeColor={colors.route}
-                    />
-                )}
+                {routeCoords.length > 0 && <Polyline coordinates={routeCoords} strokeWidth={4} strokeColor={colors.route} />}
             </MapView>
 
-            {/* Recenter */}
-            <TouchableOpacity
-                onPress={recenterMap}
-                style={[styles.recenterBtn, { backgroundColor: colors.recenterBg }]}
-            >
-                <Ionicons name="locate-outline" size={24} color={colors.text} />
+            {incomingRide?._id && <IncomingRideModal />}
+
+            {routeInfo.routeGeo.length > 0 && (
+                <RouteInfoCard distance={routeInfo.distance} duration={routeInfo.duration} />
+            )}
+
+            {/* ---------------- RECENTER ---------------- */}
+            <TouchableOpacity style={styles.recenter} onPress={recenterMap}>
+                <Ionicons name="locate-outline" size={24} color="#000" />
             </TouchableOpacity>
 
-            {/* Bottom Buttons */}
+            {/* ---------------- DRIVER BOTTOM BUTTONS ---------------- */}
             {isDriver && (
                 <View style={styles.bottomBtnWrapper}>
                     <TouchableOpacity
                         onPress={() => handleGoOnline(!isOnline)}
                         disabled={loading}
-                        style={[
-                            styles.onlineBtn,
-                            { backgroundColor: isOnline ? colors.danger : colors.tint },
-                        ]}
+                        style={[styles.onlineBtn, { backgroundColor: isOnline ? colors.danger : colors.tint }]}
                     >
-                        {loading ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.onlineBtnText}>
-                                {isOnline ? "Go Offline" : "Go Online"}
-                            </Text>
-                        )}
+                        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.onlineBtnText}>{isOnline ? "Go Offline" : "Go Online"}</Text>}
                     </TouchableOpacity>
 
-                    {isOnline && pickupLocation.address && dropupLocation.address && (
-                        <TouchableOpacity
-                            disabled= {loading}
-                            style={styles.startBtn}
-                            onPress={openMaps}
-                            activeOpacity={0.85}
-                        >
+                    {isOnline && pickupLocation.address && dropoffLocation.address && (
+                        <TouchableOpacity style={styles.startBtn} onPress={openMaps} disabled={loading}>
                             <View style={styles.directionRow}>
                                 <Ionicons name="navigate" size={18} color="#fff" />
                                 <Text style={styles.directionText}>Start</Text>
@@ -353,92 +273,15 @@ const Map = () => {
             )}
         </View>
     );
-};
-
-export default Map;
+}
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    map: { flex: 1 },
-
-    topBar: {
-        position: "absolute",
-        top: 20,
-        left: 16,
-        right: 16,
-        zIndex: 10,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-    },
-
-    bottomBtnWrapper: {
-        position: "absolute",
-        bottom: 20,
-        left: 16,
-        right: 16,
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        zIndex: 10,
-    },
-
-    onlineBtn: {
-        flex: 1,
-        paddingVertical: 14,
-        borderRadius: 30,
-        marginRight: 12,
-        justifyContent: "center",
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOpacity: 0.15,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 5,
-    },
-
-    onlineBtnText: {
-        color: "#fff",
-        fontSize: 16,
-        fontWeight: "600",
-    },
-
-    startBtn: {
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-        borderRadius: 30,
-        backgroundColor: "#16a34a",
-        justifyContent: "center",
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOpacity: 0.2,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 6,
-    },
-
-    directionRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-    },
-
-    directionText: {
-        color: "#fff",
-        fontSize: 15,
-        fontWeight: "600",
-    },
-
-    recenterBtn: {
-        position: "absolute",
-        bottom: 100,
-        right: 16,
-        padding: 14,
-        borderRadius: 30,
-        elevation: 4,
-        shadowColor: "#000",
-        shadowOpacity: 0.15,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 4 },
-    },
+    topBar: { position: "absolute", top: 40, left: 16, right: 16, flexDirection: "row", alignItems: "center", gap: 12, zIndex: 10 },
+    bottomBtnWrapper: { position: "absolute", bottom: 20, left: 16, right: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center", zIndex: 10 },
+    onlineBtn: { flex: 1, paddingVertical: 14, borderRadius: 30, marginRight: 12, justifyContent: "center", alignItems: "center" },
+    onlineBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+    startBtn: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 30, backgroundColor: "#16a34a", justifyContent: "center", alignItems: "center" },
+    directionRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    directionText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+    recenter: { position: "absolute", bottom: 100, right: 16, backgroundColor: "#fff", padding: 14, borderRadius: 30, elevation: 4 },
 });

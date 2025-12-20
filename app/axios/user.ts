@@ -21,7 +21,7 @@ export const getAUser = async (phone: string) => {
     isPrivate: true,
     });
     
-    return response.user
+    return response.data
   } catch (error) {
     throw new Error("Failed to update product");
   } 
@@ -64,7 +64,7 @@ export const autoLoginUser = async() => {
     isPrivate: true,
     refreshToken: true,
     });
-    return response
+    return response 
   } catch (error) {
     console.log(error)
   }

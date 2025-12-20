@@ -13,9 +13,12 @@ import {
 } from "react-native";
 
 import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
+import { requestRideByPickupAndDropoffLocation } from "@/app/axios/ride";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { setDestinationLocation, setPickupLocation, setSeatsAvailable } from "@/app/store/slices/trip.slice";
+import { setIsSocketConnected } from "@/app/store/slices/socketInfo.slice";
+import { resetLocation, setDestinationLocation, setPickupLocation, setSeatsAvailable } from "@/app/store/slices/trip.slice";
 import { setDriverOnlineStatus } from "@/app/store/slices/user.slice";
+import { connectSocket, disConnectSocket, goOnlineDriverSocket, socket } from "@/app/utils/socket";
 import { Text, View } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
 import Colors from "@/constants/Colors";
@@ -23,7 +26,6 @@ import Constants from "expo-constants";
 import Toast from "react-native-toast-message";
 import GoButton from "./GoButton";
 import RequestButton from "./RequestButton";
-import { requestRide } from "@/app/axios/ride";
 
 type LatLng = {
     latitude: number;
@@ -42,10 +44,11 @@ const SearchDestination: React.FC = () => {
     const theme = useColorScheme() ?? "light";
     const router = useRouter();
     const { user } = useAppSelector(s => s.userInfo);
-    const { pickupLocation, dropupLocation, seatsAvailable } = useAppSelector(s => s.tripInfo);
+    const { isSocketConnected, socketId } = useAppSelector(s => s.socketInfo);
+    const { pickupLocation, dropoffLocation, seatsAvailable, routeInfo } = useAppSelector(s => s.tripInfo);
     const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
     const [pickup, setPickup] = useState<string>(pickupLocation.address);
-    const [destination, setDestination] = useState<string>(dropupLocation.address);
+    const [destination, setDestination] = useState<string>(dropoffLocation.address);
     const [pickupCoords, setPickupCoords] = useState<LatLng | null>(null);
     const [destinationCoords, setDestinationCoords] = useState<LatLng | null>(null);
     const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
@@ -82,7 +85,6 @@ const SearchDestination: React.FC = () => {
             setSuggestions([]);
             return;
         }
-
         const res = await fetch(
             `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${text}&key=${GOOGLE_API_KEY}`
         );
@@ -111,7 +113,6 @@ const SearchDestination: React.FC = () => {
         );
         const data = await res.json();
         const loc = data.result.geometry.location;
-
         if (activeInput === "pickup") {
             setPickupCoords({ latitude: loc.lat, longitude: loc.lng })
             dispatch(setPickupLocation({ address: description, coords: { latitude: loc.lat, longitude: loc.lng } }))
@@ -171,12 +172,24 @@ const SearchDestination: React.FC = () => {
             setLoading(true);
             const payload: IUpdateOnlineStatus = {
                 currentLocation: pickupLocation,
-                destination: dropupLocation!,
+                destination: dropoffLocation!,
                 email_phone: user.phone!,
                 onlineStatus,
                 rego: user?.driverProfile?.vehicle?.rego,
-                seatAvailable: seats
+                seatAvailable: seats,
+                routeGeo: routeInfo.routeGeo.map(({ longitude, latitude }) => ({ longitude, latitude }))
             };
+            if (onlineStatus) {
+                !isSocketConnected && connectSocket();
+                socket.on("connect", () => {
+                    console.log("🟢 Connected to socket:", socket.id);
+                });
+                dispatch(setIsSocketConnected(true))
+                goOnlineDriverSocket(user?._id as string)
+            } else {
+                isSocketConnected && disConnectSocket()
+                dispatch(setIsSocketConnected(false))
+            }
 
             const response = await updateOnlineStatus(payload);
 
@@ -196,12 +209,67 @@ const SearchDestination: React.FC = () => {
         }
     };
 
-    const handleOnRequestRide = async() => {
-        // if (!pickupCoords || !destinationCoords || !user?.phone) return;
-        const payload = { currentLocation: pickupLocation, destination: dropupLocation, email_phone: user.phone!, people: seats };
-        // await requestRide(payload)
-        router.push("pages/home/Map");
-        Toast.show({ type: "success", text1: `Finding a Driver` });
+    function getValue(num: number): number {
+        if (num < 15) {
+            return 7;
+        }
+
+        if (num >= 15 && num <= 30) {
+            return 9;
+        } else {
+            // optional default (in case number is > 20)
+            return 11;
+        }
+
+      
+    }
+
+    const handleOnRequestRide = async () => {
+        setLoading(true)
+        const isInvalid =
+            !pickupLocation?.coords ||
+            !dropoffLocation?.coords ||
+            !user?.phone;
+
+        if (isInvalid) {
+            Toast.show({
+                type: "error",
+                text1: "Missing information",
+                text2: "Please select pickup & drop-off locations",
+            });
+            return;
+        }
+
+        const payload = {
+            pickupLocation,
+            dropoffLocation,
+            riderId: user?._id,
+            people: seats,
+            distance: routeInfo.distance,
+            duration: routeInfo.duration,
+            price: getValue(parseInt(routeInfo.distance)) * seats,
+        };
+
+        try {
+            const response = await requestRideByPickupAndDropoffLocation(payload);
+            // console.log("Ride response: ",response)
+            Toast.show({
+                type: "success",
+                text1: "Finding a driver...",
+            });
+
+            router.push("pages/home/Map");
+        } catch (error) {
+            console.error("Request ride failed:", error);
+
+            Toast.show({
+                type: "error",
+                text1: "Request failed",
+                text2: "Please try again",
+            });
+        }
+        setLoading(false)
+
     };
 
     const handelOnSeatAvailable = (n: number) => {
@@ -222,16 +290,34 @@ const SearchDestination: React.FC = () => {
             {/* Pickup Location */}
             <View style={[styles.card, styles.shadow, { backgroundColor: Colors[theme].card }]}>
                 <Text style={styles.label}>Pickup Location</Text>
-                <View style={styles.row}>
+
+                <View style={styles.inputRow}>
                     <TextInput
                         value={pickup}
                         onChangeText={(text) => onInputChange(text, "pickup")}
                         placeholder="Enter Pickup location"
                         placeholderTextColor={Colors[theme].text + "80"}
-                        style={[styles.input, { flex: 1, color: Colors[theme].text, borderColor: Colors[theme].tint, backgroundColor: Colors[theme].background }]}
+                        style={[
+                            styles.input,
+                            {
+                                color: Colors[theme].text,
+                                borderColor: Colors[theme].tint,
+                                backgroundColor: Colors[theme].background,
+                            },
+                        ]}
                     />
-                    <TouchableOpacity onPress={useCurrentLocation} style={styles.locationBtn}>
-                        <Ionicons name="location-sharp" size={24} color={Colors[theme].tint} />
+
+                    {pickup?.length > 0 && (
+                        <TouchableOpacity
+                            onPress={() => dispatch(resetLocation("pickup"))}
+                            style={styles.iconBtn}
+                        >
+                            <Ionicons name="close-outline" size={20} color={Colors[theme].tint} />
+                        </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity onPress={useCurrentLocation} style={styles.iconBtn}>
+                        <Ionicons name="location-sharp" size={20} color={Colors[theme].tint} />
                     </TouchableOpacity>
                 </View>
             </View>
@@ -239,14 +325,34 @@ const SearchDestination: React.FC = () => {
             {/* Destination */}
             <View style={[styles.card, styles.shadow, { backgroundColor: Colors[theme].card }]}>
                 <Text style={styles.label}>Destination</Text>
-                <TextInput
-                    value={destination}
-                    onChangeText={(text) => onInputChange(text, "destination")}
-                    placeholder="Search destination"
-                    placeholderTextColor={Colors[theme].text + "80"}
-                    style={[styles.input, { color: Colors[theme].text, borderColor: Colors[theme].tint, backgroundColor: Colors[theme].background }]}
-                />
+
+                <View style={styles.inputRow}>
+                    <TextInput
+                        value={destination}
+                        onChangeText={(text) => onInputChange(text, "destination")}
+                        placeholder="Search destination"
+                        placeholderTextColor={Colors[theme].text + "80"}
+                        style={[
+                            styles.input,
+                            {
+                                color: Colors[theme].text,
+                                borderColor: Colors[theme].tint,
+                                backgroundColor: Colors[theme].background,
+                            },
+                        ]}
+                    />
+
+                    {destination?.length > 0 && (
+                        <TouchableOpacity
+                            onPress={() => dispatch(resetLocation("dropoff"))}
+                            style={styles.iconBtn}
+                        >
+                            <Ionicons name="close-outline" size={20} color={Colors[theme].tint} />
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
+
 
             {/* Suggestions */}
             {suggestions.length > 0 && (
@@ -284,9 +390,9 @@ const SearchDestination: React.FC = () => {
             <View style={styles.goButtonContainer}>
                 {isDriver ?
                     (isOnline ?
-                    <GoButton handleGoOnline={() => handleGoOnline(true, "update location")} loading={loading} updateRoute={isOnline} /> :
-                    <GoButton handleGoOnline={() => handleGoOnline(true)} loading={loading} />) :
-                    (<RequestButton loading={loading} handleOnRequest={handleOnRequestRide} />)}
+                        <GoButton handleGoOnline={() => handleGoOnline(true, "update location")} loading={loading} updateRoute={isOnline} /> :
+                        <GoButton handleGoOnline={() => handleGoOnline(true)} loading={loading} />) :
+                    (<RequestButton loading={loading} handleOnRequest={() => handleOnRequestRide()} />)}
             </View>
         </View>
     );
@@ -301,11 +407,13 @@ const styles = StyleSheet.create({
     card: { borderRadius: 18, padding: 16, top: 14, marginBottom: 16 },
     shadow: Platform.select({ ios: { shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 6 } }, android: { elevation: 4 } }) as ViewStyle,
     label: { fontSize: 13, opacity: 0.7, marginBottom: 6 },
-    input: { borderWidth: 1, borderRadius: 14, padding: 14, fontSize: 16 },
+    inputRow: { flexDirection: "row", alignItems: "center", gap: 6, },
+    input: { flex: 1, borderWidth: 1, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 14, fontSize: 16, },
+    iconBtn: { padding: 10, borderRadius: 20, justifyContent: "center", alignItems: "center", },
     row: { flexDirection: "row", alignItems: "center", gap: 10 },
     locationBtn: { padding: 8, marginLeft: 8 },
     suggestionBox: { marginTop: 8, borderRadius: 14, overflow: "hidden" },
-    suggestionItem: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, paddingHorizontal: 10 },
+    suggestionItem: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 8 },
     suggestionText: { fontSize: 14, flex: 1 },
     seatRow: { flexDirection: "row", gap: 10, marginTop: 10 },
     seat: { minWidth: 48, paddingVertical: 12, borderRadius: 14, alignItems: "center", borderWidth: 1, borderColor: "#ccc" },

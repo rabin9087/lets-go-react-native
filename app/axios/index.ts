@@ -3,23 +3,12 @@ import axios from "axios";
 import Constants from "expo-constants";
 import { IAxiosProcessParams, TAxiosProcessor } from "./types";
 
-
 export const rootApi = Constants.expoConfig?.extra?.EXPO_BASE_URL ?? "";
-// export const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
 
-// Use your environment variables or fallback URLs
-// export const rootApi = Constants.expoConfig?.extra?.EXPO_BASE_URL ?? "";
-  // "http://192.168.1.106:5000"; // optional fallback
-
-const accessJWT = AsyncStorage.getItem("accessJWT")
-const refreshJWT = AsyncStorage.getItem("refreshJWT");
-
-// Axios instance
 export const axiosInstance = axios.create({
   baseURL: rootApi,
 });
 
-// Axios processor
 export const axiosProcessor = async ({
   method,
   url,
@@ -28,38 +17,45 @@ export const axiosProcessor = async ({
   refreshToken,
   params,
 }: IAxiosProcessParams): Promise<TAxiosProcessor> => {
-  const requestData = { ...obj };
-
   try {
-    // Get the appropriate token
-    const token = refreshToken ? await refreshJWT : await accessJWT;
+    const token = refreshToken
+      ? await AsyncStorage.getItem("refreshJWT")
+      : await AsyncStorage.getItem("accessJWT");
 
-    const headers: Record<string, string> = {};
-
-    // Do not set Content-Type for FormData
-    if (!(obj instanceof FormData)) {
-      headers["Content-Type"] = "application/json; charset=UTF-8";
-    }
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json; charset=UTF-8",
+    };
 
     if (isPrivate && token) {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const requestPayload = obj instanceof FormData ? obj : requestData;
-
-    const { data } = await axiosInstance({
+    const config: any = {
       method,
       url,
-      data: requestPayload,
       headers,
       params,
-    });
+    };
 
+    // ✅ ONLY attach data for non-GET requests
+    if (method.toLowerCase() !== "get" && obj) {
+      config.data = obj instanceof FormData ? obj : obj;
+    }
+
+    const { data } = await axiosInstance(config);
     return data;
+
   } catch (error: any) {
-    return error.response?.data || {
+    console.log("❌ AXIOS ERROR STATUS:", error?.response?.status);
+    console.log("❌ AXIOS ERROR DATA:", error?.response?.data);
+    console.log("❌ AXIOS ERROR MESSAGE:", error?.message);
+
+    return {
       status: "error",
-      message: "Something went wrong!",
+      message:
+        error?.response?.data?.message ||
+        error?.message ||
+        "Auto login failed",
     };
   }
 };

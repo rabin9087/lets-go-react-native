@@ -13,6 +13,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 import { Provider } from 'react-redux';
 import { store } from './store';
+import * as Notifications from "expo-notifications";
+import { setupNotifications } from './utils/notifications/notifications';
+import { registerRideResponseListener } from './utils/notifications/rideResponseListener';
 
 const queryClient = new QueryClient();
 SplashScreen.preventAutoHideAsync();
@@ -38,10 +41,18 @@ export default function RootLayout() {
 
   return <RootLayoutNav isDark={isDark} colorScheme={colorScheme} />;
 }
+  //Notification Setup
+// setupNotifications()
 
 function RootLayoutNav({ isDark, colorScheme }: { isDark: boolean; colorScheme: 'dark' | 'light' }) {
+  useEffect(() => {
+    setupNotifications();
+    registerRideResponseListener();
+
+  }, []);
   return (
     <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
+      
       <QueryClientProvider client={queryClient}>
         <Provider store={store}>
           <SafeAreaView style={[styles.safeArea, { backgroundColor: isDark ? '#000' : '#fff' }]}>
