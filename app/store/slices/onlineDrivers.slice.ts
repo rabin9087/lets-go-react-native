@@ -1,15 +1,18 @@
 // store/slices/onlineDrivers.slice.ts
 import { IDRIVERRIDE } from "@/app/axios/types";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
+import { ILocation } from "./trip.slice";
 
 type OnlineDriversState = {
-  drivers: IDRIVERRIDE[];
+  drivers: IDRIVERRIDE[];     // other online drivers
+  driver: IDRIVERRIDE | null; // 👈 current logged-in driver
   loading: boolean;
   error: string | null;
 };
 
 const initialState: OnlineDriversState = {
   drivers: [],
+  driver: null,
   loading: false,
   error: null,
 };
@@ -18,6 +21,59 @@ const onlineDriversSlice = createSlice({
   name: "onlineDrivers",
   initialState,
   reducers: {
+    // ✅ SET CURRENT DRIVER (IMPORTANT)
+    setCurrentDriver: (state, action: PayloadAction<IDRIVERRIDE>) => {
+      state.driver = action.payload;
+    },
+
+    // ✅ PICKUP LOCATION
+    setDriversCurrentLocations: (
+      state,
+      action: PayloadAction<ILocation>
+    ) => {
+      if (!state.driver) {
+        state.driver = {
+          ...({} as IDRIVERRIDE),
+          currentLocation: action.payload,
+        };
+        return;
+      }
+
+      state.driver.currentLocation = action.payload;
+    },
+
+    // ✅ DESTINATION LOCATION
+    setDriversDestinationLocations: (
+      state,
+      action: PayloadAction<ILocation>
+    ) => {
+      if (!state.driver) {
+        state.driver = {
+          ...({} as IDRIVERRIDE),
+          destination: action.payload,
+        };
+        return;
+      }
+
+      state.driver.destination = action.payload;
+    },
+
+ resetDriversLocations: (
+  state,
+  { payload }: PayloadAction<"pickup" | "dropoff">
+) => {
+  if (!state.driver) return;
+
+  if (payload === "pickup") {
+    state.driver.currentLocation = {address: "", coords: null};
+  }
+
+  if (payload === "dropoff") {
+    state.driver.destination = {address: "", coords: null};
+  }
+},
+
+    // ---------------- OTHER DRIVERS ----------------
     setOnlineDrivers: (state, action: PayloadAction<IDRIVERRIDE[]>) => {
       state.drivers = action.payload;
       state.loading = false;
@@ -42,17 +98,9 @@ const onlineDriversSlice = createSlice({
       );
     },
 
-    setDriversLoading: (state, action: PayloadAction<boolean>) => {
-      state.loading = action.payload;
-    },
-
-    setDriversError: (state, action: PayloadAction<string | null>) => {
-      state.error = action.payload;
-      state.loading = false;
-    },
-
     clearOnlineDrivers: (state) => {
       state.drivers = [];
+      state.driver = null;
       state.loading = false;
       state.error = null;
     },
@@ -60,11 +108,13 @@ const onlineDriversSlice = createSlice({
 });
 
 export const {
+  setCurrentDriver,
+  setDriversCurrentLocations,
+  setDriversDestinationLocations,
   setOnlineDrivers,
   addOrUpdateDriver,
   removeDriver,
-  setDriversLoading,
-  setDriversError,
+  resetDriversLocations,
   clearOnlineDrivers,
 } = onlineDriversSlice.actions;
 

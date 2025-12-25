@@ -1,17 +1,17 @@
 import { axiosProcessor, rootApi } from ".";
-import { Location } from "../store/slices/trip.slice";
+import {ILocation } from "../store/slices/trip.slice";
 import { ICoordinates } from "./types";
 
 const driverApi = rootApi + "/api/v1/driver";
 
 export type IUpdateOnlineStatus = {
     onlineStatus: boolean,
-    currentLocation: Location,
-    destination: Location,
+    currentLocation: ILocation,
+    destination: ILocation,
     rego: string,
-  email_phone: string
-  seatAvailable: number;
-  routeGeo?: ICoordinates[]
+    email_phone: string
+    seatAvailable: number;
+    routeGeo?: ICoordinates[]
 }
 
 

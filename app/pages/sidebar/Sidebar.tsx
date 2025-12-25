@@ -1,8 +1,5 @@
-import { logoutUser } from "@/app/axios/user";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { setUser } from "@/app/store/slices/user.slice";
 import { useColorScheme } from "@/components/useColorScheme";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import React, { useEffect, useRef } from "react";
 import {
@@ -13,7 +10,6 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { IUser } from "../user/user.types";
 
 const { width } = Dimensions.get("window");
 
@@ -25,7 +21,7 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
     const slideAnim = useRef(new Animated.Value(-width * 0.7)).current;
     const { user } = useAppSelector((s) => s.userInfo);
-
+    const { socketId } = useAppSelector((store) => store.socketInfo)
     const theme = useColorScheme() ?? "light";
     const isDark = theme === "dark";
 
@@ -80,6 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
                     </Text>
                     <Text style={[styles.role, { color: colors.subText }]}>
                         {user?.role ? `(${user.role.toUpperCase()})` : ""}
+                        {socketId}
                     </Text>
                 </View>
 

@@ -1,8 +1,8 @@
+import { useAppSelector } from "@/app/store/hooks";
+import { useColorScheme } from "@/components/useColorScheme";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { StyleSheet, TextInput, TouchableOpacity, View } from "react-native";
-import { useColorScheme } from "@/components/useColorScheme";
-import { useAppSelector } from "@/app/store/hooks";
+import { StyleSheet, TextInput, TouchableOpacity } from "react-native";
 
 interface Props {
     onDestinationChange: (text: string) => void;
@@ -12,6 +12,8 @@ const Destination = ({ onDestinationChange }: Props) => {
     const router = useRouter();
     const theme = useColorScheme() ?? "light";
     const isDark = theme === "dark";
+    const { driver } = useAppSelector((s) => s.onlineDriversInfo);
+    const { user } = useAppSelector((s) => s.userInfo);
     const { dropoffLocation } = useAppSelector((s) => s.tripInfo);
     return (
         <TouchableOpacity
@@ -30,7 +32,7 @@ const Destination = ({ onDestinationChange }: Props) => {
 
             <TextInput
                 style={[styles.input, { color: isDark ? "#000" : "#fff" }]}
-                value={dropoffLocation?.address}
+                value={user?.role === "driver" ? driver?.destination?.address : dropoffLocation.address}
                 onChangeText={onDestinationChange}
                 placeholder="Where to?"
                 placeholderTextColor={isDark ? "#666" : "#aaa"}

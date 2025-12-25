@@ -13,12 +13,15 @@ import {
 } from "react-native";
 
 import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
-import { requestRideByPickupAndDropoffLocation } from "@/app/axios/ride";
+import { requestTripByPickupAndDropoffLocation } from "@/app/axios/trip";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
+import { resetDriversLocations, setDriversCurrentLocations, setDriversDestinationLocations } from "@/app/store/slices/onlineDrivers.slice";
 import { setIsSocketConnected } from "@/app/store/slices/socketInfo.slice";
-import { resetLocation, setDestinationLocation, setPickupLocation, setSeatsAvailable } from "@/app/store/slices/trip.slice";
+import { IIncomingRide, ILocation, setDropoffLocation, setIncomingRide, setPickupLocation, setSeatsAvailable, setTripAccepted } from "@/app/store/slices/trip.slice";
 import { setDriverOnlineStatus } from "@/app/store/slices/user.slice";
-import { connectSocket, disConnectSocket, goOnlineDriverSocket, socket } from "@/app/utils/socket";
+import { goOnlineDriverSocket } from "@/app/utils/sockets/driver.socket";
+import { rideRequestSocket } from "@/app/utils/sockets/rider.socket";
+import { connectSocket, disConnectSocket, socket } from "@/app/utils/sockets/socket";
 import { Text, View } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
 import Colors from "@/constants/Colors";
@@ -44,13 +47,13 @@ const SearchDestination: React.FC = () => {
     const theme = useColorScheme() ?? "light";
     const router = useRouter();
     const { user } = useAppSelector(s => s.userInfo);
+    const { driver } = useAppSelector(s => s.onlineDriversInfo);
     const { isSocketConnected, socketId } = useAppSelector(s => s.socketInfo);
     const { pickupLocation, dropoffLocation, seatsAvailable, routeInfo } = useAppSelector(s => s.tripInfo);
-    const [currentLocation, setCurrentLocation] = useState<LatLng | null>(null);
-    const [pickup, setPickup] = useState<string>(pickupLocation.address);
-    const [destination, setDestination] = useState<string>(dropoffLocation.address);
-    const [pickupCoords, setPickupCoords] = useState<LatLng | null>(null);
-    const [destinationCoords, setDestinationCoords] = useState<LatLng | null>(null);
+    const [currentLocation, setCurrentLocation] = useState<ILocation | null>(null);
+
+    const [pickupCoords, setPickupCoords] = useState<ILocation | null>(null);
+    const [destinationCoords, setDestinationCoords] = useState<ILocation | null>(null);
     const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
     const [loading, setLoading] = useState(false);
     const [activeInput, setActiveInput] = useState<"pickup" | "destination" | null>(null);
@@ -61,21 +64,16 @@ const SearchDestination: React.FC = () => {
         : isDriver
             ? 4
             : 1;
-
+    const [pickup, setPickup] = useState<string>(isDriver ? driver?.currentLocation?.address as string : pickupLocation.address);
+    const [destination, setDestination] = useState<string>(isDriver ? driver?.destination?.address as string : dropoffLocation.address);
     const [seats, setSeats] = useState<number>(defaultSeats);
     const dispatch = useAppDispatch();
 
     /* -------------------- GET CURRENT LOCATION -------------------- */
     useEffect(() => {
         (async () => {
-            const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== "granted") return;
-
-            const loc = await Location.getCurrentPositionAsync({});
-            setCurrentLocation({
-                latitude: loc.coords.latitude,
-                longitude: loc.coords.longitude,
-            });
+            if (driver?.currentLocation?.address || pickupLocation?.address) return;
+            useCurrentLocation()
         })();
     }, []);
 
@@ -95,7 +93,8 @@ const SearchDestination: React.FC = () => {
     const debouncedFetch = useMemo(() => debounce(fetchSuggestions, 400), []);
 
     const onInputChange = (text: string, type: "pickup" | "destination") => {
-        if (type === "pickup") setPickup(text);
+        if (type === "pickup")
+            setPickup(text);
         else setDestination(text);
 
         setActiveInput(type);
@@ -103,65 +102,76 @@ const SearchDestination: React.FC = () => {
     };
 
     /* -------------------- SELECT ADDRESS → LAT/LNG -------------------- */
-    const onSelectAddress = async (placeId: string, description: string) => {
-        if (activeInput === "pickup") setPickup(description);
-        else setDestination(description);
+    const onSelectAddress = async (
+        placeId: string,
+        description: string
+    ) => {
         setSuggestions([]);
 
         const res = await fetch(
             `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&key=${GOOGLE_API_KEY}`
         );
         const data = await res.json();
-        const loc = data.result.geometry.location;
+
+
+        const location = data?.result?.geometry?.location;
+        if (!location) return;
+
+        const payload = {
+            address: description,
+            coords: {
+                latitude: location.lat,
+                longitude: location.lng,
+            },
+        };
+
         if (activeInput === "pickup") {
-            setPickupCoords({ latitude: loc.lat, longitude: loc.lng })
-            dispatch(setPickupLocation({ address: description, coords: { latitude: loc.lat, longitude: loc.lng } }))
-        }
-        else {
-            setDestinationCoords({ latitude: loc.lat, longitude: loc.lng });
-            dispatch(setDestinationLocation({ address: description, coords: { latitude: loc.lat, longitude: loc.lng } }))
+            setPickup(description);
+
+            isDriver
+                ? dispatch(setDriversCurrentLocations(payload))
+                : dispatch(setPickupLocation(payload));
+        } else {
+            setDestination(description);
+
+            isDriver
+                ? dispatch(setDriversDestinationLocations(payload))
+                : dispatch(setDropoffLocation(payload));
         }
     };
 
     /* -------------------- USE CURRENT LOCATION -------------------- */
     const useCurrentLocation = async () => {
-        try {
-            const { status } =
-                await Location.requestForegroundPermissionsAsync();
-            if (status !== "granted") return;
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") return;
 
-            const loc = await Location.getCurrentPositionAsync({});
-            const coords = {
-                latitude: loc.coords.latitude,
-                longitude: loc.coords.longitude,
-            };
+        const loc = await Location.getCurrentPositionAsync({});
+        const coords = {
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+        };
 
-            // Reverse geocode → full address
-            const reverse = await Location.reverseGeocodeAsync(coords);
-            const place = reverse[0];
+        const reverse = await Location.reverseGeocodeAsync(coords);
+        const place = reverse[0];
 
-            const fullAddress = [
-                place.name,
-                place.street,
-                place.city,
-                place.region,
-                place.postalCode,
-                place.country,
-            ]
-                .filter(Boolean)
-                .join(", ");
+        const fullAddress = [
+            place.name,
+            place.street,
+            place.city,
+            place.region,
+            place.postalCode,
+            place.country,
+        ]
+            .filter(Boolean)
+            .join(", ");
 
-            setPickup(fullAddress);
+        setPickup(fullAddress);
 
-            dispatch(
-                setPickupLocation({
-                    address: fullAddress,
-                    coords,
-                })
-            );
-        } catch (err) {
-            console.error("Failed to get current location", err);
-        }
+        const payload = { address: fullAddress, coords };
+
+        isDriver
+            ? dispatch(setDriversCurrentLocations(payload as ILocation))
+            : dispatch(setPickupLocation(payload));
     };
 
     /* -------------------- ONLINE / REQUEST -------------------- */
@@ -170,17 +180,20 @@ const SearchDestination: React.FC = () => {
 
         try {
             setLoading(true);
+            // router.push("pages/home/Map");
+
             const payload: IUpdateOnlineStatus = {
-                currentLocation: pickupLocation,
-                destination: dropoffLocation!,
+                currentLocation: driver?.currentLocation as ILocation,
+                destination: driver?.destination as ILocation,
                 email_phone: user.phone!,
                 onlineStatus,
-                rego: user?.driverProfile?.vehicle?.rego,
+                rego: user?.driverProfile?.vehicle?.rego || "AYG65Y",
                 seatAvailable: seats,
                 routeGeo: routeInfo.routeGeo.map(({ longitude, latitude }) => ({ longitude, latitude }))
             };
             if (onlineStatus) {
-                !isSocketConnected && connectSocket();
+                console.log(isSocketConnected)
+                !isSocketConnected && connectSocket(user?._id as string, user?.role as string);
                 socket.on("connect", () => {
                     console.log("🟢 Connected to socket:", socket.id);
                 });
@@ -190,7 +203,6 @@ const SearchDestination: React.FC = () => {
                 isSocketConnected && disConnectSocket()
                 dispatch(setIsSocketConnected(false))
             }
-
             const response = await updateOnlineStatus(payload);
 
             if (response?.status === "success") {
@@ -209,58 +221,80 @@ const SearchDestination: React.FC = () => {
         }
     };
 
-    function getValue(num: number): number {
-        if (num < 15) {
-            return 7;
+    function getExtraSeatCost(distanceKm: number, seats: number): number {
+        if (seats <= 1) return 0;
+
+        const extraPeople = seats - 1;
+
+        if (distanceKm < 15) {
+            // 10 km case → +4 per extra person
+            return extraPeople * 4;
         }
 
-        if (num >= 15 && num <= 30) {
-            return 9;
+        if (distanceKm >= 15 && distanceKm <= 20) {
+            // 20 km case → +6 per extra person
+            return extraPeople * 6;
+        }
+
+        // 20+ km case → +8 per extra person
+        return extraPeople * 8;
+    }
+
+    function getValue(distanceKm: number, seats: number): number {
+        let basePrice = 0;
+
+        // 🚗 Base price (1 person)
+        if (distanceKm < 15) {
+            basePrice = 7;
+        } else if (distanceKm >= 15 && distanceKm <= 20) {
+            basePrice = 9;
         } else {
-            // optional default (in case number is > 20)
-            return 11;
+            basePrice = 11;
         }
 
-      
+        // 👥 Seat-based increment
+        const extraSeatCost = getExtraSeatCost(distanceKm, seats) - 2;
+
+        return basePrice + extraSeatCost;
     }
 
     const handleOnRequestRide = async () => {
         setLoading(true)
+
         const isInvalid =
             !pickupLocation?.coords ||
-            !dropoffLocation?.coords ||
-            !user?.phone;
-
+            !dropoffLocation?.coords;
         if (isInvalid) {
             Toast.show({
                 type: "error",
                 text1: "Missing information",
                 text2: "Please select pickup & drop-off locations",
             });
+            setLoading(false)
+
             return;
         }
 
         const payload = {
             pickupLocation,
             dropoffLocation,
-            riderId: user?._id,
+            riderId: user?._id as string,
             people: seats,
             distance: routeInfo.distance,
             duration: routeInfo.duration,
-            price: getValue(parseInt(routeInfo.distance)) * seats,
+            price: getValue(parseInt(routeInfo.distance), seats),
         };
 
         try {
-            const response = await requestRideByPickupAndDropoffLocation(payload);
-            // console.log("Ride response: ",response)
-            Toast.show({
-                type: "success",
-                text1: "Finding a driver...",
-            });
+            const data = await requestTripByPickupAndDropoffLocation(payload);
 
+            rideRequestSocket({ riderId: user?._id as string, data: data?.newTrip })
+            console.log(data)
+            dispatch(setIncomingRide(data?.newTrip as IIncomingRide))
+            dispatch(setTripAccepted(false))
             router.push("pages/home/Map");
         } catch (error) {
-            console.error("Request ride failed:", error);
+            console.error("Request trip failed:", error);
 
             Toast.show({
                 type: "error",
@@ -275,6 +309,15 @@ const SearchDestination: React.FC = () => {
     const handelOnSeatAvailable = (n: number) => {
         setSeats(n)
         dispatch(setSeatsAvailable(n))
+    }
+
+    const handleOnResetLocation = (locationType: "pickup" | "dropoff") => {
+        if (locationType === "pickup") {
+            setPickup("")
+        } else {
+            setDestination("")
+        }
+        dispatch(resetDriversLocations(locationType))
     }
 
     return (
@@ -309,7 +352,7 @@ const SearchDestination: React.FC = () => {
 
                     {pickup?.length > 0 && (
                         <TouchableOpacity
-                            onPress={() => dispatch(resetLocation("pickup"))}
+                            onPress={() => handleOnResetLocation("pickup")}
                             style={styles.iconBtn}
                         >
                             <Ionicons name="close-outline" size={20} color={Colors[theme].tint} />
@@ -344,7 +387,7 @@ const SearchDestination: React.FC = () => {
 
                     {destination?.length > 0 && (
                         <TouchableOpacity
-                            onPress={() => dispatch(resetLocation("dropoff"))}
+                            onPress={() => handleOnResetLocation("dropoff")}
                             style={styles.iconBtn}
                         >
                             <Ionicons name="close-outline" size={20} color={Colors[theme].tint} />
@@ -388,6 +431,7 @@ const SearchDestination: React.FC = () => {
 
             {/* Action Button */}
             <View style={styles.goButtonContainer}>
+
                 {isDriver ?
                     (isOnline ?
                         <GoButton handleGoOnline={() => handleGoOnline(true, "update location")} loading={loading} updateRoute={isOnline} /> :

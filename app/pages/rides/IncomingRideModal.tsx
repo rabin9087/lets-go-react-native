@@ -1,9 +1,10 @@
-import { respondToRide } from "@/app/axios/ride";
+import { respondToTrip } from "@/app/axios/trip";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { clearIncomingRide } from "@/app/store/slices/trip.slice";
-import { useRouter } from "expo-router";
+import { clearIncomingRide, setPickedup, setShowModal } from "@/app/store/slices/trip.slice";
+import { socket } from "@/app/utils/sockets/socket";
 import { useEffect, useState } from "react";
 import {
+    ActivityIndicator,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -11,18 +12,16 @@ import {
 } from "react-native";
 
 export default function IncomingRideModal() {
-    const { incomingRide, expiresAt } = useAppSelector(
-        (s) => s.tripInfo
-    );
-
+    const { incomingRide, expiresAt } = useAppSelector((s) => s.tripInfo);
+    const { user } = useAppSelector((s) => s.userInfo);
     const dispatch = useAppDispatch();
-    const router = useRouter();
-
     const [secondsLeft, setSecondsLeft] = useState(45);
-
-    /* ⏱ Countdown logic */
+    const [loadingAction, setLoadingAction] = useState<
+        "accept" | "reject" | null
+    >(null);
+    /* ⏱ Countdown */
     useEffect(() => {
-        if (!incomingRide || !expiresAt) return;
+        if (!incomingRide || !expiresAt || loadingAction) return;
 
         const interval = setInterval(() => {
             const left = Math.max(
@@ -34,35 +33,60 @@ export default function IncomingRideModal() {
 
             if (left === 0) {
                 clearInterval(interval);
-                dispatch(clearIncomingRide());
-                respondToRide(incomingRide._id as string, "rejected");
+                setLoadingAction("reject");
+
+                respondToTrip({ _id: incomingRide._id as string, status: "rejected", driverId: user?._id as string }).finally(() => {
+                    dispatch(clearIncomingRide());
+                    setLoadingAction(null);
+                });
             }
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [incomingRide?._id, expiresAt]);
+    }, [incomingRide?._id, expiresAt, loadingAction]);
 
-    /* Reset timer when new ride comes */
+    /* Reset timer */
     useEffect(() => {
         if (incomingRide) {
-            setSecondsLeft(45);
+            setSecondsLeft(60);
+            setLoadingAction(null);
         }
     }, [incomingRide]);
 
     if (!incomingRide) return null;
 
     /* ✅ Accept */
-    const handleAccept = () => {
-        dispatch(clearIncomingRide());
-        respondToRide(incomingRide._id as string, "accepted");
-        router.push("pages/home/Map");
+    const handleAccept = async () => {
+        if (loadingAction) return;
+
+        try {
+            setLoadingAction("accept");
+            dispatch(setShowModal(false))
+            dispatch(setPickedup(false))
+            await respondToTrip({ _id: incomingRide._id as string, status: "accepted", driverId: user?._id as string });
+            socket.emit("trip:join", { tripId: incomingRide._id }, "coming from modal");
+        } finally {
+            setLoadingAction(null);
+        }
     };
 
     /* ❌ Reject */
-    const handleReject = () => {
-        dispatch(clearIncomingRide());
-        respondToRide(incomingRide._id as string, "rejected");
+    const handleReject = async () => {
+        if (loadingAction) return;
+
+        try {
+            setLoadingAction("reject");
+
+            await respondToTrip({ _id: incomingRide._id as string, status: "rejected", driverId: user?._id as string }
+            );
+            dispatch(setShowModal(false))
+            dispatch(clearIncomingRide());
+        } finally {
+            setLoadingAction(null);
+        }
     };
+
+    const isLoading = loadingAction !== null;
 
     return (
         <View style={styles.overlay}>
@@ -70,22 +94,20 @@ export default function IncomingRideModal() {
                 <Text style={styles.title}>🚕 Incoming Ride</Text>
 
                 {/* 💰 PRICE */}
-                <Text style={styles.price}>
-                    ${incomingRide.price}
-                </Text>
+                <Text style={styles.price}>${incomingRide.price}</Text>
 
                 {/* 📊 STATS */}
                 <View style={styles.statsRow}>
                     <View style={styles.statBox}>
                         <Text style={styles.statValue}>
-                            {incomingRide.distance} km
+                            {incomingRide.distance}
                         </Text>
                         <Text style={styles.statLabel}>Distance</Text>
                     </View>
 
                     <View style={styles.statBox}>
                         <Text style={styles.statValue}>
-                            {incomingRide.duration} min
+                            {incomingRide.duration}
                         </Text>
                         <Text style={styles.statLabel}>Duration</Text>
                     </View>
@@ -121,17 +143,33 @@ export default function IncomingRideModal() {
                 {/* 🔘 ACTIONS */}
                 <View style={styles.actions}>
                     <TouchableOpacity
-                        style={styles.reject}
+                        style={[
+                            styles.reject,
+                            isLoading && styles.disabledBtn,
+                        ]}
                         onPress={handleReject}
+                        disabled={isLoading}
                     >
-                        <Text style={styles.btnText}>Reject</Text>
+                        {loadingAction === "reject" ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.btnText}>Reject</Text>
+                        )}
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={styles.accept}
+                        style={[
+                            styles.accept,
+                            isLoading && styles.disabledBtn,
+                        ]}
                         onPress={handleAccept}
+                        disabled={isLoading}
                     >
-                        <Text style={styles.btnText}>Accept</Text>
+                        {loadingAction === "accept" ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.btnText}>Accept</Text>
+                        )}
                     </TouchableOpacity>
                 </View>
             </View>
@@ -168,7 +206,6 @@ const styles = StyleSheet.create({
         textAlign: "center",
     },
 
-    /* 💰 PRICE */
     price: {
         fontSize: 36,
         fontWeight: "800",
@@ -177,7 +214,6 @@ const styles = StyleSheet.create({
         marginVertical: 12,
     },
 
-    /* 📊 STATS */
     statsRow: {
         flexDirection: "row",
         justifyContent: "space-between",
@@ -205,7 +241,6 @@ const styles = StyleSheet.create({
         marginTop: 4,
     },
 
-    /* 📍 LOCATIONS */
     locationBox: {
         backgroundColor: "#f8fafc",
         padding: 14,
@@ -224,7 +259,6 @@ const styles = StyleSheet.create({
         color: "#0f172a",
     },
 
-    /* ⏱ TIMER */
     timer: {
         marginTop: 14,
         fontSize: 16,
@@ -233,7 +267,6 @@ const styles = StyleSheet.create({
         color: "#dc2626",
     },
 
-    /* 🔘 ACTIONS */
     actions: {
         flexDirection: "row",
         marginTop: 18,
@@ -255,6 +288,10 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         marginRight: 8,
         alignItems: "center",
+    },
+
+    disabledBtn: {
+        opacity: 0.7,
     },
 
     btnText: {

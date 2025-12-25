@@ -1,4 +1,5 @@
 import { IUser } from "../pages/user/user.types";
+import { IIncomingRide, ILocation } from "../store/slices/trip.slice";
 
 // Generic Axios processor params
 export interface IAxiosProcessParams {
@@ -66,9 +67,8 @@ export type IDRIVERRIDE = {
   vehicle: {
     rego: string;
   };
-  currentLocation: ICoordinates;
-  destination?: ICoordinates;
-  polyline: ICoordinates[];
+  currentLocation: ILocation;
+  destination?: ILocation;
   isOnline: boolean;
   status: "online" | "on-trip" | "offline";
   socketId?: string;
@@ -84,7 +84,9 @@ export type IResponse = {
   user?: Partial<IUser>,
   updatedRide?: any,
   onlineStatus: boolean,
-  drivers: IDRIVERRIDE[]
+  drivers: IDRIVERRIDE[],
+  driver: IDRIVERRIDE
+  newTrip:IIncomingRide
 }
 
 // Server return type

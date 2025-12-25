@@ -9,17 +9,17 @@ import {
     ViewStyle,
 } from "react-native";
 
+import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
+import { logoutUser } from "@/app/axios/user";
+import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
+import { resetTrip } from "@/app/store/slices/trip.slice";
+import { setDriverOnlineStatus, setNavigationApp, setUser } from "@/app/store/slices/user.slice";
 import { Text, View } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
 import Colors from "@/constants/Colors";
-import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { setDriverOnlineStatus, setNavigationApp, setUser } from "@/app/store/slices/user.slice";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { logoutUser } from "@/app/axios/user";
-import { IUser } from "../user/user.types";
-import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
 import Toast from "react-native-toast-message";
-import { resetTrip } from "@/app/store/slices/trip.slice";
+import { IUser } from "../user/user.types";
 
 const Account = () => {
     const theme = useColorScheme() ?? "light";
@@ -33,7 +33,7 @@ const Account = () => {
         (s) => s.tripInfo
     );
 
-    const handleOnGoOnline = async(onlineStatus: boolean) => {
+    const handleOnGoOnline = async (onlineStatus: boolean) => {
         console.log("Setting online status:", onlineStatus);
         const payload: IUpdateOnlineStatus = {
             currentLocation: pickupLocation,
@@ -44,7 +44,7 @@ const Account = () => {
             seatAvailable
         };
         // You can call your API here to go offline
-        const response =  await updateOnlineStatus(payload);
+        const response = await updateOnlineStatus(payload);
         if (response?.status === "success") {
             dispatch(setDriverOnlineStatus(onlineStatus));
             Toast.show({
@@ -75,7 +75,7 @@ const Account = () => {
                         },
                     ]
                 );
-                return; // stop logout until they go offline
+                // return; // stop logout until they go offline
             }
 
             // Clear user state
@@ -91,7 +91,7 @@ const Account = () => {
             // Remove tokens from AsyncStorage
             await AsyncStorage.removeItem("accessJWT");
             await AsyncStorage.removeItem("refreshJWT");
-            
+
             // Navigate to login page
             router.replace("/pages/user/UserSignin");
         } catch (error) {

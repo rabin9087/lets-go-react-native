@@ -25,7 +25,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
     },
     "web": {
       "bundler": "metro",
@@ -34,11 +34,11 @@
     },
     "plugins": [
       "expo-router",
-      "expo-maps"
+      "expo-maps", 
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true
     }
-    
   }
 }

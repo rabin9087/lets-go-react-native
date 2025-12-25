@@ -1,55 +1,74 @@
-import { useEffect } from "react";
+import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
+import { setIncomingRide, setShowModal } from "@/app/store/slices/trip.slice";
+import { socket } from "@/app/utils/sockets/socket";
 import * as Notifications from "expo-notifications";
-import { socket } from "@/app/utils/socket";
-import { Platform } from "react-native";
 import * as Speech from "expo-speech";
-import { useAppDispatch } from "@/app/store/hooks";
-import { setIncomingRide } from "@/app/store/slices/trip.slice";
+import { useEffect } from "react";
+import { Platform } from "react-native";
 
 export const useIncomingRide = () => {
+    const dispatch = useAppDispatch();
+    const { user } = useAppSelector(s => s.userInfo);
 
-    const dispatch = useAppDispatch()
     useEffect(() => {
-        const handleRideRequest = async (data: any) => {
-            dispatch(setIncomingRide(data))
-            console.log("🚕 Incoming ride:", data);
-            // 🔊 Speak the notification
-            Speech.speak("New incoming ride", {
+        if (user?.role !== "driver" || !user?.driverProfile?.isOnline) {
+            return;
+        }
+
+        /* 🔔 Ask notification permission */
+        (async () => {
+            await Notifications.requestPermissionsAsync();
+        })();
+
+        const handleTripRequest = async (data: any) => {
+            const newTrip = data?.newTrip;
+            if (!newTrip?._id) return;
+
+            /* 📦 Redux */
+            dispatch(setIncomingRide(newTrip));
+            dispatch(setShowModal(true));
+
+            /* 🔊 Voice alert */
+            Speech.speak("New incoming Ride", {
                 language: "en",
                 pitch: 1,
                 rate: 1,
             });
+
+            /* 🔔 Push notification */
             const notificationId =
                 await Notifications.scheduleNotificationAsync({
                     content: {
-                        title: "🚕 New Ride Request",
+                        title: "🚕 New Trip Request",
                         body:
-                            `Pickup: ${data.pickupLocation.address}\n` +
-                            `Dropoff: ${data.dropoffLocation.address}\n` +
-                            `People: ${data.people}`,
+                            `Pickup: ${newTrip.pickupLocation.address}\n` +
+                            `Dropoff: ${newTrip.dropoffLocation.address}\n` +
+                            `People: ${newTrip.people}`,
                         data: {
-                            rideId: data._id,
-                            pickup: data.pickupLocation,
-                            dropoff: data.dropoffLocation,
-                            people: data.people,
+                            tripId: newTrip._id,
+                            pickup: newTrip.pickupLocation,
+                            dropoff: newTrip.dropoffLocation,
+                            people: newTrip.people,
                         },
-                        sound: Platform.OS === "android" ? "ride_request.mp3" : "default", // 🔊
-
+                        sound:
+                            Platform.OS === "android"
+                                ? "ride_request.mp3"
+                                : "default",
                         categoryIdentifier: "RIDE_ACTIONS",
                     },
-                    trigger: null,
+                    trigger: null, // show immediately
                 });
 
-            // ⏱ Auto dismiss after 45 seconds
+            /* ⏱ Auto dismiss after 45s */
             setTimeout(() => {
                 Notifications.dismissNotificationAsync(notificationId);
             }, 45_000);
         };
 
-        socket.on("ride-request", handleRideRequest);
+        socket.on("trip:incoming", handleTripRequest);
 
         return () => {
-            socket.off("ride-request", handleRideRequest);
+            socket.off("trip:incoming", handleTripRequest);
         };
-    }, [dispatch]);
+    }, [dispatch, user?.driverProfile?.isOnline]);
 };

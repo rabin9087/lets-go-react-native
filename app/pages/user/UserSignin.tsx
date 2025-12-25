@@ -1,5 +1,8 @@
+import { IResponse } from "@/app/axios/types";
 import { autoLoginUser, loginUser } from "@/app/axios/user";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
+import { setDriversCurrentLocations, setDriversDestinationLocations } from "@/app/store/slices/onlineDrivers.slice";
+import { IIncomingRide, ILocation, setDropoffLocation, setIncomingRide, setPickedup, setPickupLocation } from "@/app/store/slices/trip.slice";
 import { setUser } from "@/app/store/slices/user.slice";
 import Colors from "@/constants/Colors";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +11,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+    ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -18,7 +22,6 @@ import {
     useColorScheme,
 } from "react-native";
 import { IUser } from "./user.types";
-import { IResponse } from "@/app/axios/types";
 
 export interface ILoginPayload {
     email_phone: string;
@@ -35,7 +38,7 @@ const useLogin = () =>
     });
 
 const LoginForm = () => {
-    const [input, setInput] = React.useState({email_phone: "", password: ""});
+    const [input, setInput] = React.useState({ email_phone: "", password: "" });
     const [errorMsg, setErrorMsg] = React.useState("");
     // const dispatch = useAppDispatch()
     const router = useRouter();
@@ -48,7 +51,9 @@ const LoginForm = () => {
         setInput((prev) => ({ ...prev, [key]: value }));
     };
 
-    const [passwordVisible, setPasswordVisible ] = useState<boolean>(false)
+    const [passwordVisible, setPasswordVisible] = useState<boolean>(false)
+    const isDriver = user?.role === "driver";
+    const isOnline = user?.driverProfile?.isOnline;
 
     const handleSubmit = () => {
         setErrorMsg("");
@@ -87,8 +92,26 @@ const LoginForm = () => {
             console.log("AUTO LOGIN RES:", res);
 
             if (res?.status === "success" && res?.data?.user?._id) {
-                dispatch(setUser(res?.data?.user as IUser));
 
+                dispatch(setUser(res?.data?.user as IUser));
+                if (res.data.user.currentTrip) {
+                    dispatch(setIncomingRide(res?.data?.user?.currentTrip as IIncomingRide))
+                    if (res?.data?.user?.role === "rider") {
+                        dispatch(setPickupLocation(res?.data?.user?.currentTrip?.pickupLocation as ILocation))
+                        dispatch(setDropoffLocation(res?.data?.user?.currentTrip?.dropoffLocation as ILocation))
+                    }
+                    if (res?.data?.user?.role === "driver") {
+                        dispatch(setDriversCurrentLocations(res?.data?.driver?.currentLocation as ILocation))
+                        dispatch(setDriversDestinationLocations(res?.data?.driver?.destination as ILocation))
+                        if (res.data.user.currentTrip.status === "ontrip") {
+                            dispatch(setPickedup(false))
+                        }
+                        if (res.data.user.currentTrip.status === "pickedup") {
+                            dispatch(setPickedup(true))
+
+                        }
+                    }
+                }
                 if (res?.data.tokens?.accessJWT) {
                     await AsyncStorage.setItem("accessJWT", res.data.tokens.accessJWT);
                 }
@@ -202,7 +225,7 @@ const LoginForm = () => {
                                 }}
                             />
                             {/* Eye Icon (only for password) */}
-                            { f.isPassword &&
+                            {f.isPassword &&
                                 <TouchableOpacity
                                     onPress={() => setPasswordVisible(prev => !prev)}
                                     style={{ paddingLeft: 10 }}
@@ -213,7 +236,7 @@ const LoginForm = () => {
                                         color={themeColors.tint}
                                     />
                                 </TouchableOpacity>}
-                            
+
                         </View>
                     ))}
 
@@ -237,18 +260,19 @@ const LoginForm = () => {
                             marginTop: 10,
                         }}
                     >
-                        <Text
-                            style={{
-                                textAlign: "center",
-                                color: theme === "dark"
-                                    ? "#444"
-                                    : "#ccc",
-                                fontWeight: "600",
-                                fontSize: 18,
-                            }}
-                        >
-                            {loginMutation.isPending ? "Logging in..." : "Login"}
-                        </Text>
+                        {loginMutation.isPending ? <ActivityIndicator color={theme ? "#000" : "#fff"} /> :
+                            <Text
+                                style={{
+                                    textAlign: "center",
+                                    color: theme === "dark"
+                                        ? "#444"
+                                        : "#ccc",
+                                    fontWeight: "600",
+                                    fontSize: 18,
+                                }}
+                            >
+                                {"Login"}
+                            </Text>}
                     </TouchableOpacity>
 
                     <TouchableOpacity

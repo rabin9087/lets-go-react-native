@@ -1,3 +1,4 @@
+import { IIncomingRide } from "@/app/store/slices/trip.slice";
 
 
 export type IUser = {
@@ -25,4 +26,6 @@ export type IUser = {
     bankDetails?: any;
     identityDocs?: any;
   };
+  currentTrip: IIncomingRide,
+  trips: string[]
 }

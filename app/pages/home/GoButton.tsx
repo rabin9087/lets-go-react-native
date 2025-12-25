@@ -18,7 +18,7 @@ const GoButton = ({ loading, handleGoOnline, updateRoute }: GoButtonProps) => {
                 disabled={loading}
             >
                 {loading ? (
-                    <ActivityIndicator color={theme ? "#fff" : "#000"} />
+                    <ActivityIndicator color={theme ? "#000": "#fff"} />
                 ) : (
                         updateRoute ? <Text style={styles.text}>Update </Text> :  <Text style={styles.text}>Let’s GO</Text>
                 )}

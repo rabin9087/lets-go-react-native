@@ -24,7 +24,7 @@ export type TInitialState = {
 
 export const initialState: TInitialState = {
     user: defaultUser,
-    navigationApp: Platform.OS
+    navigationApp: Platform.OS  === "ios" ? "apple" : "android"
 };
 
 const userSlice = createSlice({
