@@ -1,27 +1,21 @@
 import { IResponse } from "@/app/axios/types";
-import { autoLoginUser, loginUser } from "@/app/axios/user";
+import { autoLoginUser, loginUser, pushNotificationToken } from "@/app/axios/user";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 import { setDriversCurrentLocations, setDriversDestinationLocations } from "@/app/store/slices/onlineDrivers.slice";
 import { IIncomingRide, ILocation, setDropoffLocation, setIncomingRide, setPickedup, setPickupLocation } from "@/app/store/slices/trip.slice";
 import { setUser } from "@/app/store/slices/user.slice";
+import { tripJoinSocket } from "@/app/utils/sockets/rider.socket";
+import { socket } from "@/app/utils/sockets/socket";
 import Colors from "@/constants/Colors";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation } from "@tanstack/react-query";
+import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
-import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
-    useColorScheme,
-} from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View, useColorScheme} from "react-native";
 import { IUser } from "./user.types";
+import registerForPushNotificationsAsync from "@/app/utils/notifications/registerForPushNotifications";
 
 export interface ILoginPayload {
     email_phone: string;
@@ -40,7 +34,6 @@ const useLogin = () =>
 const LoginForm = () => {
     const [input, setInput] = React.useState({ email_phone: "", password: "" });
     const [errorMsg, setErrorMsg] = React.useState("");
-    // const dispatch = useAppDispatch()
     const router = useRouter();
     const theme = useColorScheme() ?? "light";
     const themeColors = Colors[theme];
@@ -52,8 +45,6 @@ const LoginForm = () => {
     };
 
     const [passwordVisible, setPasswordVisible] = useState<boolean>(false)
-    const isDriver = user?.role === "driver";
-    const isOnline = user?.driverProfile?.isOnline;
 
     const handleSubmit = () => {
         setErrorMsg("");
@@ -69,13 +60,18 @@ const LoginForm = () => {
                 dispatch(setUser(data.user as IUser));
 
                 if (data.tokens?.accessJWT && data.tokens?.refreshJWT) {
-                    await AsyncStorage.multiSet([
-                        ["accessJWT", data.tokens.accessJWT],
-                        ["refreshJWT", data.tokens.refreshJWT],
-                    ]);
+                    await SecureStore.setItemAsync("accessJWT", data.tokens.accessJWT);
+                    await SecureStore.setItemAsync("refreshJWT", data.tokens.refreshJWT);
                 }
 
                 router.replace("/pages/home/Map");
+                const token = await registerForPushNotificationsAsync(); // token: string | undefined
+
+                if (token) {
+                    await pushNotificationToken({ token }); // ✅ pass as object
+                } else {
+                    console.log("No push token obtained");
+                }
             },
             onError: (err: any) => {
                 setErrorMsg(err?.response?.data?.message || "Login failed");
@@ -95,7 +91,8 @@ const LoginForm = () => {
 
                 dispatch(setUser(res?.data?.user as IUser));
                 if (res.data.user.currentTrip) {
-                    dispatch(setIncomingRide(res?.data?.user?.currentTrip as IIncomingRide))
+                    tripJoinSocket(res.data.user.currentTrip?._id as string, user?.role as string)
+                    socket.emit("trip:join", { tripId: res.data.user.currentTrip?._id }, res.data.user?.role); dispatch(setIncomingRide(res?.data?.user?.currentTrip as IIncomingRide))
                     if (res?.data?.user?.role === "rider") {
                         dispatch(setPickupLocation(res?.data?.user?.currentTrip?.pickupLocation as ILocation))
                         dispatch(setDropoffLocation(res?.data?.user?.currentTrip?.dropoffLocation as ILocation))
@@ -103,13 +100,12 @@ const LoginForm = () => {
                     if (res?.data?.user?.role === "driver") {
                         dispatch(setDriversCurrentLocations(res?.data?.driver?.currentLocation as ILocation))
                         dispatch(setDriversDestinationLocations(res?.data?.driver?.destination as ILocation))
-                        if (res.data.user.currentTrip.status === "ontrip") {
-                            dispatch(setPickedup(false))
-                        }
-                        if (res.data.user.currentTrip.status === "pickedup") {
-                            dispatch(setPickedup(true))
-
-                        }
+                    }
+                    if (res.data.user.currentTrip.status === "ontrip") {
+                        dispatch(setPickedup(false))
+                    }
+                    if (res.data.user.currentTrip.status === "pickedup") {
+                        dispatch(setPickedup(true))
                     }
                 }
                 if (res?.data.tokens?.accessJWT) {
@@ -120,7 +116,8 @@ const LoginForm = () => {
             }
         } catch (err) {
             console.log("Auto-login failed");
-            await AsyncStorage.multiRemove(["accessJWT", "refreshJWT"]);
+            await SecureStore.deleteItemAsync("accessJWT");
+            await SecureStore.deleteItemAsync("refreshJWT");
         }
     };
 
@@ -246,41 +243,41 @@ const LoginForm = () => {
                         </Text>
                     ) : null}
 
+                    {/* SUBMIT */}
                     <TouchableOpacity
                         onPress={handleSubmit}
                         disabled={loginMutation.isPending}
                         style={{
-                            backgroundColor: loginMutation.isPending
-                                ? theme === "dark"
-                                    ? "#444"
-                                    : "#ccc"
-                                : themeColors.tint,
+                            backgroundColor: Colors[theme].backgroundPrimary,
+                            // selectedRole === "driver" ? "#1976D2" : "#4CAF50",
                             paddingVertical: 14,
                             borderRadius: 14,
-                            marginTop: 10,
+                            marginTop: 16,
                         }}
                     >
-                        {loginMutation.isPending ? <ActivityIndicator color={theme ? "#000" : "#fff"} /> :
-                            <Text
-                                style={{
-                                    textAlign: "center",
-                                    color: theme === "dark"
-                                        ? "#444"
-                                        : "#ccc",
-                                    fontWeight: "600",
-                                    fontSize: 18,
-                                }}
-                            >
-                                {"Login"}
-                            </Text>}
+                        {loginMutation.isPending ? <ActivityIndicator color={theme ? "#000" : "#fff"} /> : <Text
+                            style={{
+                                textAlign: "center",
+                                fontSize: 18,
+                                fontWeight: "600",
+                                color: "#fff",
+                            }}
+                        >
+                            Create Account
+                        </Text>}
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                        onPress={() => {
-                            router.push("pages/user/UserSignup");
-                        }}
-                    >
-                        <Text style={{ color: "green", textAlign: "center", marginTop: 12 }}>Sign up</Text>
+                    <TouchableOpacity onPress={() => router.push("pages/user/UserSignup")}>
+                        <Text
+                            style={{
+                                textAlign: "center",
+                                marginTop: 14,
+                                color: themeColors.tint,
+                                textDecorationLine: "underline",
+                            }}
+                        >
+                            Don't have an account? Signup
+                        </Text>
                     </TouchableOpacity>
 
                     {loginMutation.isSuccess && (

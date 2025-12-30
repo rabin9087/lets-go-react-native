@@ -58,20 +58,20 @@ const onlineDriversSlice = createSlice({
       state.driver.destination = action.payload;
     },
 
- resetDriversLocations: (
-  state,
-  { payload }: PayloadAction<"pickup" | "dropoff">
-) => {
-  if (!state.driver) return;
+      resetDriversLocations: (
+        state,
+        { payload }: PayloadAction<"pickup" | "dropoff">
+      ) => {
+        if (!state.driver) return;
 
-  if (payload === "pickup") {
-    state.driver.currentLocation = {address: "", coords: null};
-  }
+        if (payload === "pickup") {
+          state.driver.currentLocation = {address: "", coords: null};
+        }
 
-  if (payload === "dropoff") {
-    state.driver.destination = {address: "", coords: null};
-  }
-},
+        if (payload === "dropoff") {
+          state.driver.destination = {address: "", coords: null};
+        }
+      },
 
     // ---------------- OTHER DRIVERS ----------------
     setOnlineDrivers: (state, action: PayloadAction<IDRIVERRIDE[]>) => {
@@ -98,6 +98,12 @@ const onlineDriversSlice = createSlice({
       );
     },
 
+        setSeatsAvailable: (state, { payload }: PayloadAction<number>) => {
+      if (state.driver) {
+        state.driver.seatAvailable = payload;
+      }
+    },
+
     clearOnlineDrivers: (state) => {
       state.drivers = [];
       state.driver = null;
@@ -116,6 +122,7 @@ export const {
   removeDriver,
   resetDriversLocations,
   clearOnlineDrivers,
+  setSeatsAvailable
 } = onlineDriversSlice.actions;
 
 export default onlineDriversSlice.reducer;

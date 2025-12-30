@@ -1,10 +1,9 @@
 import { socket } from "./socket";
 
-export const rideRequestSocket = ({ riderId, data }: { riderId: string, data: any }) => {
-// socket.emit("trip:request", {
-//   riderId,data
-// });
-  socket.emit("trip:join", { tripId: data?._id}, "coming from rider", (message:string) => {
-    console.log(message)
-  })
+export const tripRequestSocket = (riderId: string) => {
+    socket.emit('rider:request', { riderId})
+}
+
+export const tripJoinSocket = (tripId: string, role: string) => {
+  socket.emit("trip:join", { tripId}, role)
 }

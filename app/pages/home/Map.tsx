@@ -10,15 +10,14 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
+    View
 } from "react-native";
-import MapView, { Marker, Polyline } from "react-native-maps";
+import MapView, { Callout, MapMarker, Marker, PROVIDER_DEFAULT, PROVIDER_GOOGLE, Polyline } from "react-native-maps";
 import Toast from "react-native-toast-message";
 
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { ILocation, setDistance, setDuration, setRouteGeo } from "@/app/store/slices/trip.slice";
-import { setDriverOnlineStatus } from "@/app/store/slices/user.slice";
-
+import { IIncomingRide, ILocation, setDistance, setDropoffLocation, setDuration, setIncomingRide, setPickedup, setPickupLocation, setRouteGeo, setTripAccepted } from "@/app/store/slices/trip.slice";
+import { setDriverOnlineStatus, setOpenModal } from "@/app/store/slices/user.slice";
 import MapDrivers from "../components/MapDrivers";
 import RouteInfoCard from "../components/RouteInfoCard";
 import Menu from "../menu/Menu";
@@ -26,22 +25,34 @@ import IncomingRideModal from "../rides/IncomingRideModal";
 import Sidebar from "../sidebar/Sidebar";
 import { useIncomingRide } from "../sockets/Sockets";
 import Destination from "./Destination";
-
 import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
 import { ICoordinates } from "@/app/axios/types";
+import { RootState } from "@/app/store";
 import { setIsSocketConnected } from "@/app/store/slices/socketInfo.slice";
+import { handleMapLongPress } from "@/app/utils/map/mapFunction";
+import PushNotificationHandler from "@/app/utils/notifications/PushNotification";
 import { emitDriverLocation, goOnlineDriverSocket } from "@/app/utils/sockets/driver.socket";
+import { tripJoinSocket } from "@/app/utils/sockets/rider.socket";
 import { connectSocket, disConnectSocket, socket } from "@/app/utils/sockets/socket";
+import { useRouter } from "expo-router";
+import { FindingDriverModal } from "../components/FindingDriverModal";
+import { ConfirmModal } from "../modal/driverAction/ConfirmModal";
 import PickedupButton from "../rides/PickedupButton";
 
 const GOOGLE_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ?? "";
 
 export default function Map() {
+    const markerRef = useRef<MapMarker>(null);
+
+    // console.log("Redux State 👉", state);
+
+    const [selectedLocation, setSelectedLocation] = useState<ILocation | null>(null);
+
     const mapRef = useRef<MapView>(null);
     const dispatch = useAppDispatch();
 
     const { user, navigationApp } = useAppSelector((s) => s.userInfo);
-    const { pickupLocation, dropoffLocation, incomingRide, routeInfo, showModal, pickedup } = useAppSelector((s) => s.tripInfo);
+    const { pickupLocation, dropoffLocation, incomingRide, routeInfo, showModal, pickedup, tripAccepted } = useAppSelector((s) => s.tripInfo);
     const { isSocketConnected } = useAppSelector((s) => s.socketInfo);
     const { driver } = useAppSelector((s) => s.onlineDriversInfo);
     const [currentLocation, setCurrentLocation] = useState<ILocation | null>(null);
@@ -57,7 +68,7 @@ export default function Map() {
     }>({});
     const isDriver = user?.role === "driver";
     const isOnline = user?.driverProfile?.isOnline;
-    const [tripId, setTripId] = useState("")
+    const [tripId, setTripId] = useState(incomingRide?._id)
     const theme = "light";
     const colors = useMemo(() => ({
         background: "#fff",
@@ -69,96 +80,174 @@ export default function Map() {
         recenterBg: "#fff",
     }), [theme]);
 
-    // const [driverLocation, setDriverLocation] = useState<ILocation | null>(null);
-    // const [riderLocation, setRiderLocation] = useState<ILocation | null>(null);r
+    const [driverLocation, setDriverLocation] = useState<ILocation | null>(null);
+    const [riderLocation, setRiderLocation] = useState<ILocation | null>(null);
+    const [tripCompleted, setTripCompleted] = useState<boolean>(false);
+    const [showActions, setShowActions] = useState<boolean>(false)
+    console.log("driverLocation: ", driverLocation)
+    console.log("riderLocation: ", riderLocation)
+    const [confirmModal, setConfirmModal] = useState<string>("")
 
-    // console.log("driverLocation: ", driverLocation)
-    // console.log("riderLocation: ", riderLocation)
     useIncomingRide();
+    PushNotificationHandler()
 
-    // useEffect(() => {
-    //     socket.on("trip:accepted", ({ tripId, driverId, riderId }) => {
-    //         if (tripId) {
-    //             dispatch(setTripAccepted(true));
-    //             setTripId(tripId)
-    //             // Join trip room AFTER tripId exists
-    //             socket.emit("trip:join", { tripId });
-    //             // console.log("trip join emit")
-    //         }
-    //     });
+    // driverAssignSocket()
 
-    //     return () => {
-    //         socket.off("trip:accepted");
-    //     };
-    // }, []);
+    const handleSetPickup = (selectedLocation: ILocation) => {
+        dispatch(
+            setPickupLocation({
+                address: selectedLocation.address,
+                coords: selectedLocation.coords,
+            })
+        );
+        setShowActions(false)
+    };
 
-    // useEffect(() => {
-    //     if (!tripId) return;
+    const handleSetDestination = (selectedLocation: ILocation) => {
 
-    //     socket.emit("trip:join", { tripId: incomingRide?._id });
+        dispatch(
+            setDropoffLocation({
+                address: selectedLocation.address,
+                coords: selectedLocation.coords,
+            })
+        );
+        setShowActions(false)
+    };
 
-    //     return () => {
-    //         socket.emit("trip:leave", { tripId });
-    //     };
-    // }, [tripId]);
+    useEffect(() => {
+        if (!socket) return;
 
-    // useEffect(() => {
-    //     if (!tripId) return;
+        const onTripAccepted = ({ trip }: { trip: IIncomingRide }) => {
+            tripJoinSocket(trip?._id as string, user.role as string);
 
-    //     socket.on("trip:location:update", ({ from, coords }) => {
-    //         // If I am driver → update rider marker
-    //         if (user.role === "driver" && from === "rider") {
-    //             setRiderLocation({ coords: coords?.coords, address: coords?.address });
-    //         }
+            setTripId(trip._id);
+            dispatch(setTripAccepted(true));
+            dispatch(setIncomingRide(trip));
 
-    //         // If I am rider → update driver marker
-    //         if (user.role === "rider" && from === "driver") {
-    //             setDriverLocation({ coords: coords?.coords, address: coords?.address });
-    //         }
-    //     });
+            Toast.show({
+                type: "success",
+                text1: "Driver assigned successfully",
+                text2: "Driver is on the way!",
+            });
+        };
 
-    //     return () => {
-    //         socket.off("trip:location:update");
-    //     };
-    // }, [tripId, user.role]);
+        const onTripPickedUp = ({ trip }: { trip: IIncomingRide }) => {
+            dispatch(setPickedup(true));
+            dispatch(setIncomingRide(trip));
 
+            Toast.show({
+                type: "success",
+                text1: "Picked up 🚗",
+                text2: "Enjoy your ride!",
+            });
+        };
 
-    // useEffect(() => {
-    //     if (!tripId || !currentLocation) return;
+        const onTripCompleted = () => {
+            dispatch(setIncomingRide(null));
+            // dispatch(setTripAccepted(false));
+            // dispatch(setPickedup(null));
 
-    //     const interval = setInterval(() => {
-    //         socket.emit("trip:location", {
-    //             tripId,
-    //             from: user.role, // "driver" | "rider"
-    //             coords: currentLocation,
-    //         });
-    //     }, 3000);
+            setTripId("");
+            setDriverLocation(null);
+            setRiderLocation(null);
 
-    //     return () => clearInterval(interval);
-    // }, [tripId, currentLocation]);
+            Toast.show({
+                type: "success",
+                text1: "Trip completed 🎉",
+            });
+        };
+
+        socket.on("trip:accepted", onTripAccepted);
+        socket.on("trip:pickedup", onTripPickedUp);
+        socket.on("trip:completed", onTripCompleted);
+
+        return () => {
+            socket.off("trip:accepted", onTripAccepted);
+            socket.off("trip:pickedup", onTripPickedUp);
+            socket.off("trip:completed", onTripCompleted);
+        };
+    }, [dispatch, user.role]);
+
+    useEffect(() => {
+        if (!tripId) return;
+
+        const handleLocationUpdate = ({
+            from,
+            coords,
+        }: {
+            from: "driver" | "rider";
+            coords: ILocation;
+        }) => {
+            if (from === "driver") {
+                setDriverLocation({
+                    coords: coords.coords,
+                    address: coords.address,
+                });
+            }
+
+            if (from === "rider") {
+                setRiderLocation({
+                    coords: coords.coords,
+                    address: coords.address,
+                });
+            }
+        };
+
+        socket.on("trip:location:update", handleLocationUpdate);
+
+        return () => {
+            socket.off("trip:location:update", handleLocationUpdate);
+        };
+    }, [tripId]);
+
+    useEffect(() => {
+        if (!tripId || !currentLocation) return;
+
+        const emitLocation = () => {
+            socket.emit("trip:location", {
+                tripId,
+                from: user.role,
+                coords: currentLocation,
+            });
+        };
+
+        emitLocation(); // send immediately
+
+        const interval = setInterval(emitLocation, 5000);
+
+        return () => clearInterval(interval);
+    }, [tripId, currentLocation, user.role]);
 
     useEffect(() => {
         if (!user?._id || !user?.role) return;
 
         connectSocket(user._id, user.role);
-        socket.on("connect", () => {
-            console.log("🟢 Connected to socket:", socket.id);
-            socket.on(incomingRide?._id as string, str => console.log(str))
+        dispatch(setIsSocketConnected(true));
 
-        });
-        dispatch(setIsSocketConnected(true))
         return () => {
-            socket.off("connect");
+            socket.disconnect();
         };
-    }, [user?._id, user?.role, dispatch]);
-
+    }, [user._id, user.role, dispatch]);
 
     /* ---------------- LOCATION ---------------- */
     const GEO_DISTANCE_THRESHOLD = 400; // meters
 
     useEffect(() => {
-        let locationSubscription: Location.LocationSubscription | null = null;
+        if (incomingRide?._id) {
+            if (pickedup === null) {
+                setConfirmModal("Online")
+            } else if (!pickedup) {
+                setConfirmModal("Pickup")
+            } else if (pickedup) {
+                setConfirmModal("Dropoff")
+            }
+        } else if (isOnline || !isOnline) {
+            setConfirmModal(isOnline ? "Offline" : "Online")
+        }
+    }, [isOnline, pickedup])
 
+    useEffect(() => {
+        let locationSubscription: Location.LocationSubscription | null = null;
         (async () => {
             const { status } = await Location.requestForegroundPermissionsAsync();
             if (status !== "granted") return;
@@ -206,59 +295,108 @@ export default function Map() {
     },
         []);
 
-
     const routePoints = useMemo(() => {
-        let origin: ICoordinates | null = null;
-        let destination: ICoordinates | null = null;
-        if (
-            incomingRide?._id &&
-            isDriver &&
-            !pickedup &&
-            driver?.currentLocation?.coords &&
-            incomingRide.pickupLocation?.coords
-        ) {
-            // Driver → Pickup
-            origin = driver.currentLocation.coords;
-            destination = incomingRide.pickupLocation.coords;
-        } else if (
-            incomingRide?._id &&
-            isDriver &&
-            pickedup &&
-            incomingRide?.pickupLocation?.coords &&
-            incomingRide?.dropoffLocation?.coords
-        ) {
-            // Pickup → Dropoff
-            origin = incomingRide.pickupLocation.coords;
-            destination = incomingRide.dropoffLocation.coords;
-        } else if (
-            isDriver &&
-            driver?.currentLocation?.coords &&
-            driver?.destination?.coords
-        ) {
-            // Driver → Destination
-            origin = driver.currentLocation.coords;
-            destination = driver.destination.coords;
-        } else if (
-            !isDriver &&
-            pickupLocation?.coords &&
-            dropoffLocation?.coords
-        ) {
-            // Passenger
-            origin = pickupLocation.coords;
-            destination = dropoffLocation.coords;
-        }
+        const result = {
+            origin: null as ICoordinates | null,
+            destination: null as ICoordinates | null,
+        };
 
-        return { origin, destination };
+        // ---------------- DRIVER LOGIC ----------------
+        if (isDriver) {
+            if (
+                incomingRide?._id &&
+                !pickedup &&
+                driver?.currentLocation?.coords &&
+                incomingRide?.pickupLocation?.coords
+            ) {
+                // Driver → Pickup
+                return {
+                    origin: driver.currentLocation.coords,
+                    destination: incomingRide?.pickupLocation?.coords,
+                };
+            }
+
+            if (
+                incomingRide?._id &&
+                pickedup &&
+                incomingRide.pickupLocation?.coords &&
+                incomingRide.dropoffLocation?.coords
+            ) {
+                // Pickup → Dropoff
+                return {
+                    origin: incomingRide.pickupLocation.coords,
+                    destination: incomingRide.dropoffLocation.coords,
+                };
+            }
+
+            if (
+                driver?.currentLocation?.coords &&
+                driver?.destination?.coords
+            ) {
+                // Driver → Destination (normal navigation)
+                return {
+                    origin: driver.currentLocation.coords,
+                    destination: driver.destination.coords,
+                };
+            }
+        }
+        if (!driver) {
+            if (
+                incomingRide?._id &&
+                (!pickedup) &&
+                driverLocation?.coords &&
+                incomingRide?.pickupLocation?.coords
+            ) {
+                // Driver → Pickup
+                console.log("  // Driver → Pickup")
+                return {
+                    origin: driverLocation.coords,
+                    destination: incomingRide?.pickupLocation?.coords,
+                };
+            }
+
+            if (
+                incomingRide?._id &&
+                pickedup &&
+                incomingRide.pickupLocation?.coords &&
+                incomingRide.dropoffLocation?.coords
+            ) {
+                // Pickup → Dropoff
+                console.log("// Pickup → Dropoff")
+                return {
+                    origin: incomingRide.pickupLocation.coords,
+                    destination: incomingRide.dropoffLocation.coords,
+                };
+            }
+
+            if (
+                pickupLocation?.coords &&
+                dropoffLocation.coords
+            ) {
+                // Driver → Destination (normal navigation)
+                console.log(" // Driver → Destination")
+
+                return {
+                    origin: pickupLocation.coords,
+                    destination: dropoffLocation.coords,
+                };
+            }
+        }
+        return result;
+
+
+
     }, [
         isDriver,
         pickedup,
+        tripAccepted,
         incomingRide?._id,
         driver?.currentLocation?.coords,
         driver?.destination?.coords,
+        driverLocation?.coords,
         pickupLocation?.coords,
         dropoffLocation?.coords,
     ]);
-
 
     useEffect(() => {
         if (!routePoints.origin || !routePoints.destination) {
@@ -271,7 +409,6 @@ export default function Map() {
             destination: `${routePoints.destination.latitude},${routePoints.destination.longitude}`,
         });
     }, [routePoints]);
-
 
     /* ---------------- DESTINATION → COORDS ---------------- */
     useEffect(() => {
@@ -379,7 +516,7 @@ export default function Map() {
         setLoading(true);
 
         const url =
-            navigationApp === "apple"
+            navigationApp === "ios"
                 ? `http://maps.apple.com/?saddr=${navPoints.origin}&daddr=${navPoints.destination}&dirflg=d`
                 : `https://www.google.com/maps/dir/?api=1&origin=${navPoints.origin}&destination=${navPoints.destination}&travelmode=driving`;
 
@@ -389,7 +526,7 @@ export default function Map() {
             if (!supported) {
                 Alert.alert(
                     "Error",
-                    `Cannot open ${navigationApp === "apple" ? "Apple Maps" : "Google Maps"
+                    `Cannot open ${navigationApp === "ios" ? "Apple Maps" : "Google Maps"
                     }`
                 );
                 return;
@@ -403,10 +540,9 @@ export default function Map() {
         }
     };
 
-
     /* ---------------- GO ONLINE / OFFLINE ---------------- */
     const handleGoOnline = async (onlineStatus: boolean) => {
-        // if (!currentLocation) return;
+
         try {
             setLoading(true);
             const payload: IUpdateOnlineStatus = {
@@ -424,8 +560,8 @@ export default function Map() {
                 socket.on("connect", () => {
                     console.log("🟢 Connected to socket:", socket.id);
                 });
-                dispatch(setIsSocketConnected(true))
                 goOnlineDriverSocket(user?._id as string)
+                dispatch(setIsSocketConnected(true))
             } else {
                 isSocketConnected && disConnectSocket()
                 dispatch(setIsSocketConnected(false))
@@ -445,6 +581,7 @@ export default function Map() {
             setLoading(false);
         }
     };
+
     if (!currentLocation) return <View style={{ flex: 1 }} />;
 
     return (
@@ -459,15 +596,17 @@ export default function Map() {
             </View>
 
             <Sidebar visible={sidebarVisible} onClose={() => setSidebarVisible(false)} />
+            {user?.role === "rider" && (tripAccepted === false) && <FindingDriverModal />}
 
             {/* ---------------- MAP ---------------- */}
             <MapView
                 ref={mapRef}
                 style={{ flex: 1 }}
-                // provider={navigationApp}
+                provider={navigationApp === "ios" ? PROVIDER_DEFAULT : PROVIDER_GOOGLE}
                 showsUserLocation
                 showsMyLocationButton={false} // <-- disable default recenter button
                 onMapReady={() => setMapReady(true)}   // ✅ IMPORTANT 
+                onLongPress={(event) => handleMapLongPress(event, setSelectedLocation)}
                 initialRegion={{
                     latitude: currentLocation.coords?.latitude as number,
                     longitude: currentLocation.coords?.longitude as number,
@@ -489,6 +628,48 @@ export default function Map() {
                 {dropoffLocation?.coords && <Marker coordinate={dropoffLocation.coords} pinColor="yellow" title="Dropoff Location"
                     description="Your dropoff point" />}
 
+                {selectedLocation?.coords && (
+                    <Marker
+                        ref={markerRef}
+                        coordinate={selectedLocation.coords}
+                        pinColor="red"
+                        onPress={() => setShowActions(true)}
+                    >
+                    </Marker>
+                )}
+
+                {showActions && selectedLocation && (
+                    <View style={styles.actionSheet}>
+                        <Text style={styles.title}>Choose location as</Text>
+
+                        <Text>{selectedLocation.address}</Text>
+                        <Text>
+                            {selectedLocation?.coords?.latitude},{" "}
+                            {selectedLocation?.coords?.longitude}
+                        </Text>
+
+                        <TouchableOpacity
+                            style={styles.btn}
+                            onPress={() => {
+                                handleSetPickup(selectedLocation);
+                                setShowActions(false);
+                            }}
+                        >
+                            <Text style={styles.btnText}>Set as Pickup</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={styles.btn}
+                            onPress={() => {
+                                handleSetDestination(selectedLocation);
+                                setShowActions(false);
+                            }}
+                        >
+                            <Text style={styles.btnText}>Set as Destination</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
                 {/* {driverLocation?.coords && <Marker coordinate={driverLocation.coords} pinColor="pink" title="Driver Location"
                     description="Driver cureent location" />} */}
 
@@ -509,6 +690,9 @@ export default function Map() {
                 <RouteInfoCard distance={routeInfo.distance} duration={routeInfo.duration} />
             )}
 
+
+            {<ConfirmModal onConfirm={() => handleGoOnline(!isOnline)} data={confirmModal} />}
+
             {/* ---------------- RECENTER ---------------- */}
             <TouchableOpacity style={styles.recenter} onPress={recenterMap}>
                 <Ionicons name="locate-outline" size={24} color="#000" />
@@ -517,38 +701,91 @@ export default function Map() {
             {/* ---------------- DRIVER BOTTOM BUTTONS ---------------- */}
             {isDriver && (
                 <View style={styles.bottomBtnWrapper}>
-                    {incomingRide?._id ? pickedup !== null && <PickedupButton /> :
-
+                    {incomingRide?._id ? (
+                        pickedup !== null && <PickedupButton confirmModal={confirmModal} />
+                    ) : (
                         <TouchableOpacity
-                            onPress={() => handleGoOnline(!isOnline)}
+                            // onPress={() => handleGoOnline(!isOnline)}
+                            onPress={() => dispatch(setOpenModal(true))}
                             disabled={loading}
-                            style={[styles.onlineBtn, { backgroundColor: isOnline ? colors.danger : colors.tint }]}
+                            style={[
+                                styles.onlineBtn,
+                                { backgroundColor: isOnline ? colors.danger : colors.tint },
+                            ]}
                         >
-                            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.onlineBtnText}>{isOnline ? "Go Offline" : "Go Online"}</Text>}
-                        </TouchableOpacity>
-                    }
-
-                    {isOnline && ((driver?.currentLocation.address && driver?.destination?.address) || (pickupLocation.address && dropoffLocation.address as string)) && (
-                        <TouchableOpacity style={styles.startBtn} onPress={openMaps} disabled={loading}>
-                            <View style={styles.directionRow}>
-                                <Ionicons name="navigate" size={18} color="#fff" />
-                                <Text style={styles.directionText}>Start</Text>
-                            </View>
+                            {loading ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <Text style={styles.onlineBtnText}>
+                                    {isOnline ? "Go Offline" : "Go Online"}
+                                </Text>
+                            )}
                         </TouchableOpacity>
                     )}
+
+                    {isOnline &&
+                        ((driver?.currentLocation.address &&
+                            driver?.destination?.address) ||
+                            (pickupLocation.address &&
+                                dropoffLocation.address)) && (
+                            <TouchableOpacity
+                                style={styles.startBtn}
+                                onPress={openMaps}
+                                disabled={loading}
+                            >
+                                <View style={styles.directionRow}>
+                                    <Ionicons name="navigate" size={18} color="#fff" />
+                                    <Text style={styles.directionText}>Start</Text>
+                                </View>
+                            </TouchableOpacity>
+                        )}
                 </View>
             )}
+
         </View>
     );
 }
 
 const styles = StyleSheet.create({
     topBar: { position: "absolute", top: 40, left: 16, right: 16, flexDirection: "row", alignItems: "center", gap: 12, zIndex: 10 },
-    bottomBtnWrapper: { position: "absolute", bottom: 20, left: 16, right: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center", zIndex: 10 },
+    bottomBtnWrapper: { position: "absolute", bottom: 20, left: 16, right: 16, flexDirection: "row", justifyContent: "space-between", gap: 6, alignItems: "center", zIndex: 10 },
     onlineBtn: { flex: 1, paddingVertical: 14, borderRadius: 30, marginRight: 12, justifyContent: "center", alignItems: "center" },
     onlineBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
     startBtn: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 30, backgroundColor: "#16a34a", justifyContent: "center", alignItems: "center" },
     directionRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    directionText: { color: "#fff", fontSize: 15, fontWeight: "600" },
+    directionText: { color: "#fff", fontSize: 25, fontWeight: "600" },
     recenter: { position: "absolute", bottom: 100, right: 16, backgroundColor: "#fff", padding: 14, borderRadius: 30, elevation: 4 },
+    callout: {
+        backgroundColor: "#fff",
+        padding: 12,
+        borderRadius: 12,
+        width: 200,
+    },
+    title: {
+        fontWeight: "700",
+        marginBottom: 8,
+        textAlign: "center",
+    },
+    btn: {
+        backgroundColor: "#111",
+        paddingVertical: 10,
+        borderRadius: 8,
+        marginTop: 6,
+    },
+    btnText: {
+        color: "#fff",
+        textAlign: "center",
+        fontWeight: "600",
+    },
+    actionSheet: {
+        position: "absolute",
+        bottom: 20,
+        left: 16,
+        right: 16,
+        backgroundColor: "#fff",
+        padding: 16,
+        borderRadius: 16,
+        elevation: 6,
+    },
+
 });

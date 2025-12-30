@@ -18,7 +18,7 @@ const Destination = ({ onDestinationChange }: Props) => {
     return (
         <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => router.push("pages/home/SearchDesitantion")}
+            onPress={() => router.push("pages/home/SearchDestiantion")}
             style={[
                 styles.card,
                 { backgroundColor: isDark ? "#fff" : "#000" },

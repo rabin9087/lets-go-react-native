@@ -71,6 +71,7 @@ export type IDRIVERRIDE = {
   destination?: ILocation;
   isOnline: boolean;
   status: "online" | "on-trip" | "offline";
+  seatAvailable: number;
   socketId?: string;
   createdAt: Date;
   updatedAt: Date;

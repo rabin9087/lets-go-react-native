@@ -1,3 +1,4 @@
+import { ICoordinates } from '@/app/axios/types';
 import { IUser } from '@/app/pages/user/user.types';
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { Platform } from 'react-native';
@@ -14,17 +15,20 @@ export const defaultUser: Partial<IUser> = {
   
 } as const;
 
-export type NavigationApp = "google" | "apple";
+
+export type NavigationApp = "android" | "ios";
 
 
 export type TInitialState = {
     user: Partial<IUser>,
-    navigationApp: NavigationApp | "ios" | "android" | "windows" | "macos" | "web"
+    navigationApp: NavigationApp;
+    openModal: boolean;
 }
 
 export const initialState: TInitialState = {
     user: defaultUser,
-    navigationApp: Platform.OS  === "ios" ? "apple" : "android"
+    navigationApp: Platform.OS === "ios" ? "ios" : "android",
+    openModal: false
 };
 
 const userSlice = createSlice({
@@ -41,10 +45,16 @@ const userSlice = createSlice({
       },
       setNavigationApp: (state, {payload}: PayloadAction<NavigationApp>) => {
           state.navigationApp = payload
-    },
+      },
+      setSavedAddress: (state, {payload}: PayloadAction<{label: string, coordinates: ICoordinates, address: string,}>) => {
+         state?.user?.savedLocations?.push(payload )
+      },
+      setOpenModal: (state, {payload}: PayloadAction<boolean>) => {
+          state.openModal = payload
+      },
   },
 });
 
-export const { setUser, setDriverOnlineStatus, setNavigationApp } = userSlice.actions;
+export const { setUser, setDriverOnlineStatus, setNavigationApp, setOpenModal } = userSlice.actions;
 
 export default userSlice.reducer;

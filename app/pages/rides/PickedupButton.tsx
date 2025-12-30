@@ -1,77 +1,106 @@
 import { respondToTrip } from "@/app/axios/trip";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { clearIncomingRide, setIncomingRide, setPickedup } from "@/app/store/slices/trip.slice";
-import { View } from "@/components/Themed";
+import { clearIncomingRide, setPickedup } from "@/app/store/slices/trip.slice";
+import { setOpenModal } from "@/app/store/slices/user.slice";
 import { useColorScheme } from "@/components/useColorScheme.web";
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity } from "react-native";
+import Colors from "@/constants/Colors";
+import { Ionicons } from "@expo/vector-icons";
+import React from "react";
+import {
+    ActivityIndicator,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+} from "react-native";
+import { ConfirmModal } from "../modal/driverAction/ConfirmModal";
 
 type IPickedupButton = {
     loading?: boolean;
+    confirmModal?: string
 };
 
-const theme = useColorScheme() ?? "light";
+const PickedupButton = ({ loading, confirmModal }: IPickedupButton) => {
+    const theme = useColorScheme() === "dark" ? "dark" : "light";
+    const colors = Colors[theme];
 
-const PickedupButton = ({ loading }: IPickedupButton) => {
-    const {incomingRide, pickedup } = useAppSelector(s => s.tripInfo)
-    const {user} = useAppSelector(s => s.userInfo)
-    const dispatch = useAppDispatch()
+    const { incomingRide, pickedup } = useAppSelector((s) => s.tripInfo);
+    const { user } = useAppSelector((s) => s.userInfo);
+    const dispatch = useAppDispatch();
 
-    const handleOnPickedup = () => {
-        dispatch(setPickedup(true))
-        respondToTrip({ _id: incomingRide?._id as string, status: "pickedup", driverId: user?._id})
-    }
-    const handleOnDropoff = () => {
-       
-        respondToTrip({ _id: incomingRide?._id as string, status: "completed", driverId: user?._id })
-        dispatch(clearIncomingRide());
-        dispatch(setPickedup(null))
-    }
+    const handlePress = async () => {
+        if (!incomingRide?._id) return;
+
+        if (!pickedup) {
+            dispatch(setPickedup(true));
+            await respondToTrip({
+                _id: incomingRide._id,
+                status: "pickedup",
+                driverId: user?._id,
+            });
+        } else {
+            await respondToTrip({
+                _id: incomingRide._id,
+                status: "completed",
+                driverId: user?._id,
+            });
+            dispatch(clearIncomingRide());
+            dispatch(setPickedup(null));
+        }
+    };
+
     return (
-        <View style={styles.wrapper}>
         <TouchableOpacity
-            style={styles.button}
-            // onPress={handleGoOnline}
+            activeOpacity={0.85}
             disabled={loading}
+            onPress={() => dispatch(setOpenModal(true))}
+            style={[
+                styles.button,
+                {
+                    backgroundColor: pickedup ? "#16A34A" : colors.tint,
+                },
+            ]}
         >
+            <ConfirmModal onConfirm={() => handlePress()} data={confirmModal as string} />
             {loading ? (
-                <ActivityIndicator color={theme ? "#000" : "#fff"} />
+                <ActivityIndicator color="#fff" />
             ) : (
-                pickedup ? <Text onPress={handleOnDropoff} style={styles.text}>Dropoff </Text> : <Text onPress={handleOnPickedup} style={styles.text}>Pick up</Text>
+                <>
+                    <Ionicons
+                        name={pickedup ? "flag-outline" : "car-outline"}
+                        size={18}
+                        color="#fff"
+                    />
+                    <Text style={styles.text}>
+                        {pickedup ? "Confirm Drop-off" : "Confirm Pickup"}
+                    </Text>
+                </>
             )}
         </TouchableOpacity>
-        </View>
     );
 };
 
 export default PickedupButton;
 
-
 const styles = StyleSheet.create({
-    wrapper: {
-        paddingHorizontal: 20,
-        width: "60%",
-    },
-
     button: {
-        backgroundColor: theme ? "#fff" : "#000",
-        paddingVertical: 15,
-        borderRadius: 40,
-        width: "100%",
+        flex: 1,                 // 🔥 critical for row layout
+        height: 56,
+        borderRadius: 30,
+        flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
+        gap: 8,
 
-        // Uber-like shadow
-        shadowColor: theme ? "#000" : "#fff",
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 3 },
+        shadowColor: "#000",
+        shadowOpacity: 0.25,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 4 },
         elevation: 6,
     },
-
     text: {
-        color: theme ? "#000" : "#fff",
-        fontSize: 18,
+        color: "#fff",
+        fontSize: 15,
         fontWeight: "600",
-        letterSpacing: 0.5,
+        letterSpacing: 0.4,
     },
 });

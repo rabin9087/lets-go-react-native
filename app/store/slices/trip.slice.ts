@@ -9,6 +9,7 @@ export interface ILocation {
 
 export type IIncomingRide = {
     _id?: string,
+    rider?: string;
     pickupLocation: ILocation,
     dropoffLocation: ILocation,
     status: string;
@@ -23,7 +24,7 @@ export interface TripState {
   pickupLocation: ILocation;
   dropoffLocation: ILocation;
   paymentAmount: number;
-  seatsAvailable: number;
+  numberOfPassengers: number;
   status: "pending" | "ongoing" | "completed" | "cancelled";
   [key: string]: any; // for other optional details
   routeInfo: {
@@ -42,7 +43,7 @@ const initialState: TripState = {
   pickupLocation: { address: "", coords: null },
   dropoffLocation: { address: "", coords: null },
   paymentAmount: 0,
-  seatsAvailable: 0,
+  numberOfPassengers: 1,
   status: "pending",
   routeInfo: {
   routeGeo: [],
@@ -69,8 +70,8 @@ const tripSlice = createSlice({
     setPaymentAmount: (state, action: PayloadAction<number>) => {
       state.paymentAmount = action.payload;
     },
-    setSeatsAvailable: (state, action: PayloadAction<number>) => {
-      state.seatsAvailable = action.payload;
+    setNumberOfPassengers: (state, action: PayloadAction<number>) => {
+      state.numberOfPassengers = action.payload;
     },
     setRouteGeo: (state, action: PayloadAction<ICoordinates[]>) => {
       state.routeInfo.routeGeo = action.payload;
@@ -127,7 +128,7 @@ export const {
   setPickupLocation,
   setDropoffLocation,
   setPaymentAmount,
-  setSeatsAvailable,
+  setNumberOfPassengers,
   setTripStatus,
   setRouteGeo,
   setPickedup,

@@ -1,6 +1,6 @@
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useAppSelector } from "@/app/store/hooks";
 import { useColorScheme } from "@/components/useColorScheme.web";
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type RequestButtonProps = {
     loading: boolean;
@@ -11,6 +11,7 @@ const theme = useColorScheme() ?? "light";
 
 
 const RequestButton = ({ loading, handleOnRequest }: RequestButtonProps) => {
+    const { incomingRide } = useAppSelector(s => s.tripInfo)
     return (
         <View style={styles.wrapper}>
             <TouchableOpacity

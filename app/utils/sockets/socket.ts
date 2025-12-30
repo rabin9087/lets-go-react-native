@@ -12,18 +12,20 @@ export const socket = io(SOCKET_URL, {
 export const connectSocket = (userId: string, role: string) => {
   if (socket.connected) return;
 
-  // 👇 THIS is what backend reads as handshake.auth
+  // ✅ MUST be set BEFORE connect
   socket.auth = { userId, role };
 
   socket.connect();
 
   socket.on("connect", () => {
     console.log("🟢 Socket connected:", socket.id);
-
-    
+    console.log("Joined room: user_" + userId + "--" + role);
   });
-};
 
+   socket.on("connect_error", (err) => {
+    console.error("🔴 Socket connection error:", err.message);
+  });
+}
 
 export const disConnectSocket = () => {
   if (socket.connected) {

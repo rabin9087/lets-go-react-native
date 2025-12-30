@@ -30,47 +30,24 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (error) throw error;
-  }, [error]);
-
-  useEffect(() => {
     if (loaded) SplashScreen.hideAsync();
-  }, [loaded]);
+  }, [loaded, error]);
 
-  if (!loaded) return null;
-
-  return <RootLayoutNav isDark={isDark} colorScheme={colorScheme} />;
-}
-//Notification Setup
-// setupNotifications()
-
-function RootLayoutNav({ isDark, colorScheme }: { isDark: boolean; colorScheme: 'dark' | 'light' }) {
   useEffect(() => {
     setupNotifications();
     registerRideResponseListener();
-
-
   }, []);
-  return (
-    <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
 
+  if (!loaded) return null;
+
+  return (
+    <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
       <QueryClientProvider client={queryClient}>
         <Provider store={store}>
-          <SafeAreaView style={[styles.safeArea, { backgroundColor: isDark ? '#000' : '#fff' }]}>
-            <StatusBar
-              style={isDark ? 'light' : 'dark'}
-              backgroundColor={isDark ? '#000' : '#fff'}
-              translucent={false}
-            />
+          <SafeAreaView style={styles.safeArea}>
+            <StatusBar style={isDark ? 'light' : 'dark'} />
             <View style={styles.container}>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                }}
-              >
-                <Stack.Screen name="pages/home/map" />
-                <Stack.Screen name="pages/user/usersignin" />
-                <Stack.Screen name="pages/sidebar/sidebar" />
-              </Stack>
+              <Stack screenOptions={{ headerShown: false }} />
               <Toast />
             </View>
           </SafeAreaView>
@@ -81,10 +58,6 @@ function RootLayoutNav({ isDark, colorScheme }: { isDark: boolean; colorScheme: 
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-  },
+  safeArea: { flex: 1 },
+  container: { flex: 1 },
 });

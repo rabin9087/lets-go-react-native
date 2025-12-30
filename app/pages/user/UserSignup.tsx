@@ -2,59 +2,125 @@ import { createUser } from "@/app/axios/user";
 import Colors from "@/constants/Colors";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
     Text,
     TextInput,
     TouchableOpacity,
     View,
     useColorScheme,
-    KeyboardAvoidingView,
-    ScrollView,
-    Platform,
 } from "react-native";
 import { IUser } from "./user.types";
-import { useRouter } from "expo-router";
+import Toast from "react-native-toast-message";
 
+/* -------------------- TYPES -------------------- */
+type Role = "rider" | "driver";
+
+type UserInput = {
+    name: string;
+    email: string;
+    phone: string;
+    password: string;
+    confirmPassword: string;
+
+    vehicleRego: string;
+    licenceNumber: string;
+    vehicleType: string;
+};
+
+type InputProps = {
+    icon: keyof typeof Ionicons.glyphMap;
+    placeholder: string;
+    fieldKey: keyof UserInput;
+    value: string;
+    onChange: (key: keyof UserInput, value: string) => void;
+    keyboardType?: any;
+    secure?: boolean;
+    passwordVisible?: boolean;
+    togglePassword?: () => void;
+    theme: "light" | "dark";
+    themeColors: any;
+};
+
+type CommonFieldConfig = {
+    fieldKey: keyof UserInput;
+    icon: keyof typeof Ionicons.glyphMap;
+    placeholder: string;
+    keyboardType?: any;
+};
+
+/* -------------------- API HOOK -------------------- */
 const useCreateUser = () =>
-    
     useMutation({
-        mutationFn: async (data: Partial<IUser>) => {
-            const res = await createUser(data);
-            return res;
-        },
+        mutationFn: async (data: Partial<IUser>) => createUser(data),
     });
 
+/* -------------------- COMPONENT -------------------- */
 const CreateUserForm = () => {
-    const [userInput, setUserInput] = React.useState({
+    const theme = useColorScheme() ?? "light";
+    const themeColors = Colors[theme];
+    const router = useRouter();
+
+    const [selectedRole, setSelectedRole] = useState<Role>("rider");
+    const [passwordVisible, setPasswordVisible] = useState(false);
+    const [errorMsg, setErrorMsg] = useState("");
+
+    const [userInput, setUserInput] = useState<UserInput>({
         name: "",
         email: "",
         phone: "",
         password: "",
         confirmPassword: "",
+        vehicleRego: "",
+        licenceNumber: "",
+        vehicleType: "",
     });
 
-    const router = useRouter();
-    const [passwordVisible, setPasswordVisible] = useState<boolean>(true)
+    const COMMON_FIELDS: CommonFieldConfig[] = [
+        {
+            fieldKey: "name",
+            icon: "person-outline",
+            placeholder: "Full Name",
+        },
+        {
+            fieldKey: "email",
+            icon: "mail-outline",
+            placeholder: "Email Address",
+            keyboardType: "email-address",
+        },
+        {
+            fieldKey: "phone",
+            icon: "call-outline",
+            placeholder: "Phone Number",
+            keyboardType: "phone-pad",
+        },
+    ];
 
-
-    const [errorMsg, setErrorMsg] = React.useState("");
 
     const createUserMutation = useCreateUser();
-    const theme = useColorScheme() ?? "light";
-    const themeColors = Colors[theme];
 
-    const handleChange = (key: keyof typeof userInput, value: string) => {
-        setUserInput((prev) => ({
-            ...prev,
-            [key]: value,
-        }));
+    const handleChange = (key: keyof UserInput, value: string) => {
+        setUserInput(prev => ({ ...prev, [key]: value }));
     };
 
-    const handleSubmit = async() => {
+    /* -------------------- SUBMIT -------------------- */
+    const handleSubmit = async () => {
         setErrorMsg("");
 
-        const { name, email, phone, password, confirmPassword } = userInput;
+        const {
+            name,
+            email,
+            phone,
+            password,
+            confirmPassword,
+            vehicleRego,
+            licenceNumber,
+            vehicleType,
+        } = userInput;
 
         if (!name || !email || !phone || !password || !confirmPassword) {
             setErrorMsg("All fields are required.");
@@ -66,241 +132,314 @@ const CreateUserForm = () => {
             return;
         }
 
+        if (
+            selectedRole === "driver" &&
+            (!vehicleRego || !licenceNumber || !vehicleType)
+        ) {
+            setErrorMsg("All driver details are required.");
+            return;
+        }
+
         const payload: Partial<IUser> = {
             name,
-            phone,
             email,
+            phone,
             password,
-            role: "rider",
+            role: selectedRole,
             status: "active",
+            ...(selectedRole === "driver" && {
+                vehicleRego,
+                licenceNumber,
+                vehicleType,
+            }),
         };
+        try {
+            const response = await createUserMutation.mutateAsync(payload);
 
-        const res = await createUserMutation.mutate(payload);
-        // if (res?.status === "success") {
-        //     router.replace("/pages/user/Usersignin");
-        // }
+            if (response?.status === "success") {
+                // Navigate to SignIn page on success
+                router.replace("pages/user/UserSignin");
+                Toast.show({
+                    type: "success",
+                    text1: "Account Created Successfully\n",
+                    text2: "Please Login now "
+                })
+            } else {
+                // Show error message if API returns failure
+                setErrorMsg(response?.message || "Failed to create account.");
+            }
+        } catch (error: any) {
+            // Catch network or unexpected errors
+            setErrorMsg(error?.response?.data?.message || error?.message || "An error occurred.");
+        }
     };
 
-    const fields = [
-        {
-            key: "name",
-            icon: "person-outline",
-            placeholder: "Full Name",
-        },
-        {
-            key: "email",
-            icon: "mail-outline",
-            placeholder: "Email Address",
-            keyboardType: "email-address",
-        },
-        {
-            key: "phone",
-            icon: "call-outline",
-            placeholder: "Phone Number",
-            keyboardType: "phone-pad",
-        },
-        {
-            key: "role",
-            icon: "person",
-            placeholder: "Role"
-        },
-        {
-            key: "password",
-            icon: "lock-closed-outline",
-            placeholder: "Password",
-            secureTextEntry: true,
-            isPassword: true
-        },
-        {
-            key: "confirmPassword",
-            icon: "lock-closed-outline",
-            placeholder: "Confirm Password",
-            secureTextEntry: true,
-            isPassword: true
-        },
-    ];
-
+    /* -------------------- UI -------------------- */
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
             style={{ flex: 1 }}
         >
             <ScrollView
+                keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{
                     flexGrow: 1,
                     padding: 24,
-                    backgroundColor: themeColors.background,
                     justifyContent: "center",
+                    backgroundColor: themeColors.background,
                 }}
-                keyboardShouldPersistTaps="handled"
             >
+                {/* FORM CARD */}
                 <View
                     style={{
-                        backgroundColor: theme === "dark" ? "#111" : "#fff",
+                        backgroundColor: themeColors.card,
                         padding: 24,
                         borderRadius: 20,
-                        shadowColor: "#000",
-                        shadowOpacity: 0.15,
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowRadius: 10,
                         elevation: 6,
                     }}
                 >
+                    {/* TITLE (FIXED) */}
                     <Text
                         style={{
                             fontSize: 26,
                             fontWeight: "700",
-                            color: themeColors.text,
-                            marginBottom: 22,
                             textAlign: "center",
+                            marginBottom: 16,
+                            color: themeColors.text,
                         }}
                     >
-                        Create New User
+                        Create Account
                     </Text>
 
-                    {/* INPUTS */}
-                    {fields.map((f, index) => (
-                        <View
-                            key={index}
-                            style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                borderWidth: 1,
-                                borderColor: theme === "dark" ? "#333" : "#ddd",
-                                backgroundColor:
-                                    theme === "dark" ? "#1a1a1a" : "#f9f9f9",
-                                borderRadius: 14,
-                                paddingHorizontal: 12,
-                                paddingVertical: 10,
-                                marginBottom: 12,
-                            }}
-                        >
-                            <Ionicons
-                                name={f.icon as any}
-                                size={20}
-                                color={themeColors.tint}
-                            />
+                    {/* ROLE TOGGLE (FIXED POSITION) */}
+                    <View
+                        style={{
+                            flexDirection: "row",
+                            borderRadius: 14,
+                            overflow: "hidden",
+                            marginBottom: 20,
+                        }}
+                    >
+                        {(["rider", "driver"] as Role[]).map(role => {
+                            const isActive = selectedRole === role;
 
-                            <TextInput
-                                placeholder={f.placeholder}
-                                value={userInput[f.key as keyof typeof userInput]} // ✅ cast key to keyof
-                                onChangeText={(v) =>
-                                    handleChange(f.key as keyof typeof userInput, v)
-                                }
-                                placeholderTextColor={theme === "dark" ? "#888" : "#999"}
-                                keyboardType={f.keyboardType as
-                                    | "default"
-                                    | "email-address"
-                                    | "numeric"
-                                    | "phone-pad"
-                                    | "number-pad"
-                                    | "decimal-pad"
-                                    | "url"
-                                    | "ascii-capable"
-                                    | "numbers-and-punctuation"
-                                    | "name-phone-pad"
-                                    | "visible-password"
-                                    | "twitter"
-                                    | "web-search"
-                                    | undefined} // ✅ cast to correct type
-                                secureTextEntry={f.isPassword ? !passwordVisible : false}
-                                style={{
-                                    marginLeft: 10,
-                                    flex: 1,
-                                    color: themeColors.text,
-                                    fontSize: 16,
-                                }}
-                            />
-                            {/* Eye Icon (only for password) */}
-                            {f.isPassword &&
+                            const bgColor =
+                                role === "rider"
+                                    ? isActive
+                                        ? Colors[theme].backgroundPrimary
+                                        : "#E3F2FD"
+                                    : isActive
+                                        ? Colors[theme].backgroundPrimary
+                                        : "#E3F2FD";
+
+                            return (
                                 <TouchableOpacity
-                                    onPress={() => setPasswordVisible(prev => !prev)}
-                                    style={{ paddingLeft: 10 }}
+                                    key={role}
+                                    onPress={() => setSelectedRole(role)}
+                                    style={{
+                                        flex: 1,
+                                        paddingVertical: 14,
+                                        backgroundColor: bgColor,
+                                    }}
                                 >
-                                    <Ionicons
-                                        name={passwordVisible ? "eye-outline" : "eye-off-outline"}
-                                        size={22}
-                                        color={themeColors.tint}
-                                    />
-                                </TouchableOpacity>}
+                                    <Text
+                                        style={{
+                                            textAlign: "center",
+                                            fontWeight: "700",
+                                            color: isActive ? "#fff" : "#000",
+                                        }}
+                                    >
+                                        Sign up as {role}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
+
+                    {/* INPUT AREA (STABLE HEIGHT – NO JUMP) */}
+                    <View style={{ minHeight: 420 }}>
+                        {/* COMMON INPUTS */}
+                        {COMMON_FIELDS.map(f => (
+                            <Input
+                                key={f.fieldKey}
+                                icon={f.icon}
+                                placeholder={f.placeholder}
+                                keyboardType={f.keyboardType}
+                                fieldKey={f.fieldKey}
+                                value={userInput[f.fieldKey]}
+                                onChange={handleChange}
+                                theme={theme}
+                                themeColors={themeColors}
+                            />
+                        ))}
 
 
-                        </View>
-                    ))}
-
-                    {errorMsg ? (
-                        <Text
+                        {/* DRIVER INPUTS (VISUALLY TOGGLED ONLY) */}
+                        <View
                             style={{
-                                color: "red",
-                                textAlign: "center",
-                                marginBottom: 12,
+                                opacity: selectedRole === "driver" ? 1 : 0,
+                                height: selectedRole === "driver" ? "auto" : 0,
+                                overflow: "hidden",
                             }}
+                            pointerEvents={selectedRole === "driver" ? "auto" : "none"}
                         >
+                            <Input
+                                icon="car-outline"
+                                placeholder="Vehicle Registration"
+                                fieldKey="vehicleRego"
+                                value={userInput.vehicleRego}
+                                onChange={handleChange}
+                                theme={theme}
+                                themeColors={themeColors}
+                            />
+                            <Input
+                                icon="id-card-outline"
+                                placeholder="Licence Number"
+                                fieldKey="licenceNumber"
+                                value={userInput.licenceNumber}
+                                onChange={handleChange}
+                                theme={theme}
+                                themeColors={themeColors}
+                            />
+                            <Input
+                                icon="bus-outline"
+                                placeholder="Vehicle Type"
+                                fieldKey="vehicleType"
+                                value={userInput.vehicleType}
+                                onChange={handleChange}
+                                theme={theme}
+                                themeColors={themeColors}
+                            />
+                        </View>
+
+                        {/* PASSWORDS */}
+                        <Input
+                            icon="lock-closed-outline"
+                            placeholder="Password"
+                            fieldKey="password"
+                            value={userInput.password}
+                            secure
+                            passwordVisible={passwordVisible}
+                            togglePassword={() => setPasswordVisible(p => !p)}
+                            onChange={handleChange}
+                            theme={theme}
+                            themeColors={themeColors}
+                        />
+
+                        <Input
+                            icon="lock-closed-outline"
+                            placeholder="Confirm Password"
+                            fieldKey="confirmPassword"
+                            value={userInput.confirmPassword}
+                            secure
+                            passwordVisible={passwordVisible}
+                            togglePassword={() => setPasswordVisible(p => !p)}
+                            onChange={handleChange}
+                            theme={theme}
+                            themeColors={themeColors}
+                        />
+                    </View>
+
+                    {/* ERROR */}
+                    {errorMsg && (
+                        <Text style={{ color: "red", textAlign: "center", marginTop: 8 }}>
                             {errorMsg}
                         </Text>
-                    ) : null}
+                    )}
 
+                    {/* SUBMIT */}
                     <TouchableOpacity
                         onPress={handleSubmit}
-                        disabled={createUserMutation.isPending}
                         style={{
-                            backgroundColor: createUserMutation.isPending
-                                ? theme === "dark"
-                                    ? "#444" // disabled dark mode
-                                    : "#ccc" // disabled light mode
-                                : themeColors.tint, // THEME-BASED PRIMARY COLOR
+                            backgroundColor: Colors[theme].backgroundPrimary,
+                                // selectedRole === "driver" ? "#1976D2" : "#4CAF50",
                             paddingVertical: 14,
                             borderRadius: 14,
-                            marginTop: 10,
+                            marginTop: 16,
                         }}
                     >
                         <Text
                             style={{
                                 textAlign: "center",
-                                color: theme === "dark" ? "#888" : "#999",
-                                fontWeight: "600",
                                 fontSize: 18,
+                                fontWeight: "600",
+                                color: "#fff",
                             }}
                         >
-                            {createUserMutation.isPending ? "Creating..." : "Create User"}
+                            Create Account
                         </Text>
                     </TouchableOpacity>
 
-                    <TouchableOpacity
-                        onPress={() => {
-                            router.push("pages/user/UserSignin");
-                        }}
-                    >
-                        <Text style={{ color: "green", textAlign: "center", marginTop: 12 }}>Sign in</Text>
+                    {/* SIGN IN */}
+                    <TouchableOpacity onPress={() => router.push("pages/user/UserSignin")}>
+                        <Text
+                            style={{
+                                textAlign: "center",
+                                marginTop: 14,
+                                color: themeColors.tint,
+                                textDecorationLine: "underline",
+                            }}
+                        >
+                            Already have an account? Sign in
+                        </Text>
                     </TouchableOpacity>
-
-                    {createUserMutation.isSuccess && (
-                        <Text
-                            style={{
-                                color: "green",
-                                textAlign: "center",
-                                marginTop: 12,
-                            }}
-                        >
-                            User created successfully!
-                        </Text>
-                    )}
-
-                    {createUserMutation.isError && (
-                        <Text
-                            style={{
-                                color: "red",
-                                textAlign: "center",
-                                marginTop: 12,
-                            }}
-                        >
-                            Failed to create user
-                        </Text>
-                    )}
                 </View>
             </ScrollView>
         </KeyboardAvoidingView>
     );
+
 };
+
+/* -------------------- INPUT -------------------- */
+const Input = ({
+    icon,
+    placeholder,
+    value,
+    fieldKey,
+    onChange,
+    keyboardType,
+    secure,
+    passwordVisible,
+    togglePassword,
+    theme,
+    themeColors,
+}: InputProps) => (
+    <View
+        style={{
+            flexDirection: "row",
+            alignItems: "center",
+            borderWidth: 1,
+            borderColor: themeColors.border,
+            backgroundColor: theme === "dark" ? "#1a1a1a" : "#f9f9f9",
+            borderRadius: 14,
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            marginBottom: 12,
+        }}
+    >
+        <Ionicons name={icon} size={20} color={themeColors.tint} />
+        <TextInput
+            placeholder={placeholder}
+            value={value}
+            keyboardType={keyboardType}
+            onChangeText={v => onChange(fieldKey, v)}
+            secureTextEntry={secure && !passwordVisible}
+            style={{
+                marginLeft: 10,
+                flex: 1,
+                color: themeColors.text,
+            }}
+        />
+        {secure && (
+            <TouchableOpacity onPress={togglePassword}>
+                <Ionicons
+                    name={passwordVisible ? "eye-outline" : "eye-off-outline"}
+                    size={22}
+                    color={themeColors.tint}
+                />
+            </TouchableOpacity>
+        )}
+    </View>
+);
 
 export default CreateUserForm;

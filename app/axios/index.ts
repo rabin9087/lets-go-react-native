@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import Constants from "expo-constants";
 import { IAxiosProcessParams, TAxiosProcessor } from "./types";
-
+import * as SecureStore from "expo-secure-store";
 export const rootApi = Constants.expoConfig?.extra?.EXPO_BASE_URL ?? "";
 
 export const axiosInstance = axios.create({
@@ -19,8 +19,8 @@ export const axiosProcessor = async ({
 }: IAxiosProcessParams): Promise<TAxiosProcessor> => {
   try {
     const token = refreshToken
-      ? await AsyncStorage.getItem("refreshJWT")
-      : await AsyncStorage.getItem("accessJWT");
+      ? await SecureStore.getItemAsync("refreshJWT")
+      : await SecureStore.getItemAsync("accessJWT");
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json; charset=UTF-8",

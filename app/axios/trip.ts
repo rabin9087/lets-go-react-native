@@ -12,7 +12,7 @@ export const requestTripByPickupAndDropoffLocation = async (data: any) => {
     isPrivate: true,
     obj: data,
     })
-        return response.data as IResponse
+        return response
     } catch (error) {
         console.log(error)
     } 

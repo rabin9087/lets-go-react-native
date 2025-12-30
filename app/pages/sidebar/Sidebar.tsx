@@ -23,6 +23,7 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
     const { user } = useAppSelector((s) => s.userInfo);
     const { socketId } = useAppSelector((store) => store.socketInfo)
     const theme = useColorScheme() ?? "light";
+
     const isDark = theme === "dark";
 
     const colors = {
@@ -45,6 +46,28 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
 
     const router = useRouter();
     const dispatch = useAppDispatch();
+    // Sidebar items array
+    const sidebarItems = [
+        {
+            label: "Account",
+            route: "pages/sidebar/Account",
+        },
+        {
+            label: "Setting",
+            route: "pages/setting/Setting",
+        },
+        {
+            label: "Sign Up",
+            route: "pages/user/UserSignup",
+        },
+        {
+            label: "Mode",
+            onPress: () => {
+                // custom logic for Mode toggle
+                console.log("Toggle Mode");
+            },
+        },
+    ];
 
 
     return (
@@ -80,39 +103,22 @@ const Sidebar: React.FC<SidebarProps> = ({ visible, onClose }) => {
                     </Text>
                 </View>
 
-                {/* Items */}
-                <SidebarItem
-                    label="Account"
-                    onPress={() => {
-                        router.push("pages/sidebar/Account");
-                        onClose();
-                    }}
-                    colors={colors}
-                />
-
-                <SidebarItem
-                    label="Sign In"
-                    onPress={() => {
-                        router.push("pages/user/UserSignin");
-                        onClose();
-                    }}
-                    colors={colors}
-                />
-
-                <SidebarItem
-                    label="Sign Up"
-                    onPress={() => {
-                        router.push("pages/user/UserSignup");
-                        onClose();
-                    }}
-                    colors={colors}
-                />
-
-                <SidebarItem
-                    label="Mode"
-                    onPress={() => { }}
-                    colors={colors}
-                />
+                {/* Render items from array */}
+                {sidebarItems.map((item, idx) => (
+                    <SidebarItem
+                        key={idx}
+                        label={item.label}
+                        onPress={
+                            item.onPress
+                                ? item.onPress
+                                : () => {
+                                    router.push(item.route!);
+                                    onClose();
+                                }
+                        }
+                        colors={colors}
+                    />
+                ))}
 
             </Animated.View>
         </>

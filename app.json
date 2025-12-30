@@ -5,6 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
+    "platforms": ["ios", "android"],
     "scheme": "letsgo",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -17,13 +18,17 @@
       "supportsTablet": true,
       "infoPlist": {
                 "NSLocationWhenInUseUsageDescription": "Your location is used for navigation."
-      }
+      },
+      "bundleIdentifier": "com.rabinshah.letsgo",
+      "buildNumber": "1.0.0"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#ffffff",
       },
+       "package": "com.rabinshah.letsgo",
+      "versionCode": 1,
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
     },
@@ -35,10 +40,12 @@
     "plugins": [
       "expo-router",
       "expo-maps", 
-      "expo-notifications"
+      "expo-notifications",
+       "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "assetBundlePatterns": ["**/*"]
   }
 }

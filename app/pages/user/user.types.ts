@@ -1,3 +1,4 @@
+import { ICoordinates } from "@/app/axios/types";
 import { IIncomingRide } from "@/app/store/slices/trip.slice";
 
 
@@ -26,6 +27,13 @@ export type IUser = {
     bankDetails?: any;
     identityDocs?: any;
   };
+  savedLocations: [
+    {
+      label: string,
+      coordinates: ICoordinates,
+      address: string
+    },
+  ],
   currentTrip: IIncomingRide,
   trips: string[]
 }

@@ -25,7 +25,7 @@ export const useIncomingRide = () => {
             if (!newTrip?._id) return;
 
             /* 📦 Redux */
-            dispatch(setIncomingRide(newTrip));
+            dispatch(setIncomingRide({ ...newTrip, rider: data?.rider }));
             dispatch(setShowModal(true));
 
             /* 🔊 Voice alert */
@@ -41,6 +41,7 @@ export const useIncomingRide = () => {
                     content: {
                         title: "🚕 New Trip Request",
                         body:
+                            `${data?.rider.toUpperCase()}\n` +
                             `Pickup: ${newTrip.pickupLocation.address}\n` +
                             `Dropoff: ${newTrip.dropoffLocation.address}\n` +
                             `People: ${newTrip.people}`,

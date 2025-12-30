@@ -1,6 +1,7 @@
 import { axiosProcessor, rootApi } from ".";
 import { ILoginPayload } from "../pages/user/UserSignin";
 import { IUser } from "../pages/user/user.types";
+import { ICoordinates } from "./types";
 
 const userApi = rootApi + "/api/v1/user";
 
@@ -63,6 +64,36 @@ export const autoLoginUser = async() => {
     url: `${userApi}/get-accessjwt`,
     isPrivate: true,
     refreshToken: true,
+    });
+    return response 
+  } catch (error) {
+    console.log(error)
+  }
+};
+
+export const addUserAddress = async ({label, address, coords }: {label: string, address: string, coords: ICoordinates }) => {
+  try {
+    const response = await axiosProcessor({
+    method: "post",
+    url: `${userApi}/add-address`,
+    isPrivate: true,
+    refreshToken: true,
+    obj: {label, address, coords}
+    });
+    return response 
+  } catch (error) {
+    console.log(error)
+  }
+};
+
+export const pushNotificationToken = async ({ token }: { token: string }) => {
+  try {
+    const response = await axiosProcessor({
+    method: "post",
+    url: `${userApi}/push-token`,
+    isPrivate: true,
+      refreshToken: true,
+    obj: {pushToken: token}
     });
     return response 
   } catch (error) {

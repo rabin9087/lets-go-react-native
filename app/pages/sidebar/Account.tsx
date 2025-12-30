@@ -158,7 +158,7 @@ const Account = () => {
                 {/* Google Maps */}
                 <TouchableOpacity
                     style={styles.optionRow}
-                    onPress={() => dispatch(setNavigationApp("google"))}
+                    onPress={() => dispatch(setNavigationApp("android"))}
                 >
                     <Ionicons
                         name="logo-google"
@@ -166,7 +166,7 @@ const Account = () => {
                         color={Colors[theme].tint}
                     />
                     <Text style={styles.optionText}>Google Maps</Text>
-                    {navigationApp === "google" && (
+                    {navigationApp === "android" && (
                         <Ionicons
                             name="checkmark-circle"
                             size={22}
@@ -178,7 +178,7 @@ const Account = () => {
                 {/* Apple Maps (iOS only visually, but still selectable) */}
                 <TouchableOpacity
                     style={styles.optionRow}
-                    onPress={() => dispatch(setNavigationApp("apple"))}
+                    onPress={() => dispatch(setNavigationApp("ios"))}
                 >
                     <Ionicons
                         name="map"
@@ -186,7 +186,7 @@ const Account = () => {
                         color={Colors[theme].tint}
                     />
                     <Text style={styles.optionText}>Apple Maps</Text>
-                    {navigationApp === "apple" && (
+                    {navigationApp === "ios" && (
                         <Ionicons
                             name="checkmark-circle"
                             size={22}

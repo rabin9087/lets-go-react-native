@@ -1,41 +1,38 @@
-import { Ionicons } from "@expo/vector-icons";
-import * as Location from "expo-location";
-import { useRouter } from "expo-router";
-import debounce from "lodash.debounce";
-import React, { useEffect, useMemo, useState } from "react";
-import {
-    FlatList,
-    Platform,
-    StyleSheet,
-    TextInput,
-    TouchableOpacity,
-    ViewStyle,
-} from "react-native";
-
 import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
 import { requestTripByPickupAndDropoffLocation } from "@/app/axios/trip";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { resetDriversLocations, setDriversCurrentLocations, setDriversDestinationLocations } from "@/app/store/slices/onlineDrivers.slice";
+import { resetDriversLocations, setDriversCurrentLocations, setDriversDestinationLocations, setSeatsAvailable } from "@/app/store/slices/onlineDrivers.slice";
 import { setIsSocketConnected } from "@/app/store/slices/socketInfo.slice";
-import { IIncomingRide, ILocation, setDropoffLocation, setIncomingRide, setPickupLocation, setSeatsAvailable, setTripAccepted } from "@/app/store/slices/trip.slice";
+import { IIncomingRide, ILocation, setDropoffLocation, setIncomingRide, setNumberOfPassengers, setPickupLocation, setTripAccepted } from "@/app/store/slices/trip.slice";
 import { setDriverOnlineStatus } from "@/app/store/slices/user.slice";
 import { goOnlineDriverSocket } from "@/app/utils/sockets/driver.socket";
-import { rideRequestSocket } from "@/app/utils/sockets/rider.socket";
+import { tripRequestSocket } from "@/app/utils/sockets/rider.socket";
 import { connectSocket, disConnectSocket, socket } from "@/app/utils/sockets/socket";
 import { Text, View } from "@/components/Themed";
 import { useColorScheme } from "@/components/useColorScheme";
 import Colors from "@/constants/Colors";
+import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
+import * as Location from "expo-location";
+import { useRouter } from "expo-router";
+import debounce from "lodash.debounce";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+    FlatList, Keyboard, Platform,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    TouchableOpacity,
+    ViewStyle
+} from "react-native";
 import Toast from "react-native-toast-message";
+import { SaveAddressModal } from "../modal/SavedAddress";
+import { UserSavedAddress } from "../modal/UserSavedAddress";
 import GoButton from "./GoButton";
 import RequestButton from "./RequestButton";
+import FindDriverToggle from "./searchDestination/FindDriverToggle";
 
-type LatLng = {
-    latitude: number;
-    longitude: number;
-};
-
-type PlacePrediction = {
+export type PlacePrediction = {
     place_id: string;
     description: string;
 };
@@ -48,12 +45,8 @@ const SearchDestination: React.FC = () => {
     const router = useRouter();
     const { user } = useAppSelector(s => s.userInfo);
     const { driver } = useAppSelector(s => s.onlineDriversInfo);
-    const { isSocketConnected, socketId } = useAppSelector(s => s.socketInfo);
-    const { pickupLocation, dropoffLocation, seatsAvailable, routeInfo } = useAppSelector(s => s.tripInfo);
-    const [currentLocation, setCurrentLocation] = useState<ILocation | null>(null);
-
-    const [pickupCoords, setPickupCoords] = useState<ILocation | null>(null);
-    const [destinationCoords, setDestinationCoords] = useState<ILocation | null>(null);
+    const { isSocketConnected } = useAppSelector(s => s.socketInfo);
+    const { pickupLocation, dropoffLocation, seatsAvailable, routeInfo, incomingRide } = useAppSelector(s => s.tripInfo);
     const [suggestions, setSuggestions] = useState<PlacePrediction[]>([]);
     const [loading, setLoading] = useState(false);
     const [activeInput, setActiveInput] = useState<"pickup" | "destination" | null>(null);
@@ -67,7 +60,12 @@ const SearchDestination: React.FC = () => {
     const [pickup, setPickup] = useState<string>(isDriver ? driver?.currentLocation?.address as string : pickupLocation.address);
     const [destination, setDestination] = useState<string>(isDriver ? driver?.destination?.address as string : dropoffLocation.address);
     const [seats, setSeats] = useState<number>(defaultSeats);
+    const [openSavedAddress, setOpenSavedAddress] = useState<boolean>(false);
     const dispatch = useAppDispatch();
+    const pickupRef = useRef<TextInput>(null);
+    const destinationRef = useRef<TextInput>(null);
+    const [errorMessage, setErrorMessage] = useState<string>("")
+    const [searchValue, setSearchValue] = useState("");
 
     /* -------------------- GET CURRENT LOCATION -------------------- */
     useEffect(() => {
@@ -192,13 +190,12 @@ const SearchDestination: React.FC = () => {
                 routeGeo: routeInfo.routeGeo.map(({ longitude, latitude }) => ({ longitude, latitude }))
             };
             if (onlineStatus) {
-                console.log(isSocketConnected)
                 !isSocketConnected && connectSocket(user?._id as string, user?.role as string);
                 socket.on("connect", () => {
                     console.log("🟢 Connected to socket:", socket.id);
                 });
-                dispatch(setIsSocketConnected(true))
                 goOnlineDriverSocket(user?._id as string)
+                dispatch(setIsSocketConnected(true))
             } else {
                 isSocketConnected && disConnectSocket()
                 dispatch(setIsSocketConnected(false))
@@ -213,9 +210,13 @@ const SearchDestination: React.FC = () => {
                     text1: upldateLocation === "" ? `You are now ${onlineStatus ? "Online" : "Offline"}` :
                         "Location Updated",
                 });
+            } else {
+                setErrorMessage(response?.message as string)
             }
         } catch (err) {
             console.error("Failed to update online status", err);
+            setErrorMessage(err as string)
+
         } finally {
             setLoading(false);
         }
@@ -259,6 +260,7 @@ const SearchDestination: React.FC = () => {
     }
 
     const handleOnRequestRide = async () => {
+        // if (incomingRide?._id) return
         setLoading(true)
 
         const isInvalid =
@@ -283,19 +285,24 @@ const SearchDestination: React.FC = () => {
             distance: routeInfo.distance,
             duration: routeInfo.duration,
             price: getValue(parseInt(routeInfo.distance), seats),
+            regoPhone: searchValue !== "" ? searchValue : null
         };
 
         try {
             const data = await requestTripByPickupAndDropoffLocation(payload);
+            if (data?.status === "success") {
+                dispatch(setIncomingRide(data?.data?.newTrip as IIncomingRide))
+                tripRequestSocket(user?._id as string)  //rider join socket
+                // tripJoinSocket(data?.newTrip?._id as string, user?.role as string) // trip Join Socket
+                dispatch(setTripAccepted(false))
+                router.push("pages/home/Map");
+            } else {
+                setErrorMessage(data?.message as string)
+            }
 
-            rideRequestSocket({ riderId: user?._id as string, data: data?.newTrip })
-            console.log(data)
-            dispatch(setIncomingRide(data?.newTrip as IIncomingRide))
-            dispatch(setTripAccepted(false))
-            router.push("pages/home/Map");
         } catch (error) {
             console.error("Request trip failed:", error);
-
+            setErrorMessage(error as string)
             Toast.show({
                 type: "error",
                 text1: "Request failed",
@@ -309,6 +316,7 @@ const SearchDestination: React.FC = () => {
     const handelOnSeatAvailable = (n: number) => {
         setSeats(n)
         dispatch(setSeatsAvailable(n))
+        dispatch(setNumberOfPassengers(n))
     }
 
     const handleOnResetLocation = (locationType: "pickup" | "dropoff") => {
@@ -318,6 +326,7 @@ const SearchDestination: React.FC = () => {
             setDestination("")
         }
         dispatch(resetDriversLocations(locationType))
+        setSuggestions([]);
     }
 
     return (
@@ -330,6 +339,17 @@ const SearchDestination: React.FC = () => {
                 <Text style={styles.headerTitle}>Trip Details</Text>
             </View>
 
+            <TouchableOpacity onPress={() => setOpenSavedAddress(true)}>
+                <View style={styles.inner}>
+                    <Ionicons name="add-circle-outline" size={30} color={Colors[theme].text} style={{ marginRight: 8 }} />
+                    <Text style={{ color: Colors[theme].text, fontWeight: "700", fontSize: 16 }}>
+                        Add Address
+                    </Text>
+                </View>
+            </TouchableOpacity>
+
+            <SaveAddressModal visible={openSavedAddress} onClose={() => setOpenSavedAddress(false)} />
+
             {/* Pickup Location */}
             <View style={[styles.card, styles.shadow, { backgroundColor: Colors[theme].card }]}>
                 <Text style={styles.label}>Pickup Location</Text>
@@ -337,6 +357,8 @@ const SearchDestination: React.FC = () => {
                 <View style={styles.inputRow}>
                     <TextInput
                         value={pickup}
+                        ref={pickupRef}
+                        onFocus={() => setActiveInput("pickup")}
                         onChangeText={(text) => onInputChange(text, "pickup")}
                         placeholder="Enter Pickup location"
                         placeholderTextColor={Colors[theme].text + "80"}
@@ -349,7 +371,6 @@ const SearchDestination: React.FC = () => {
                             },
                         ]}
                     />
-
                     {pickup?.length > 0 && (
                         <TouchableOpacity
                             onPress={() => handleOnResetLocation("pickup")}
@@ -372,6 +393,8 @@ const SearchDestination: React.FC = () => {
                 <View style={styles.inputRow}>
                     <TextInput
                         value={destination}
+                        ref={destinationRef}
+                        onFocus={() => setActiveInput("destination")}
                         onChangeText={(text) => onInputChange(text, "destination")}
                         placeholder="Search destination"
                         placeholderTextColor={Colors[theme].text + "80"}
@@ -412,26 +435,120 @@ const SearchDestination: React.FC = () => {
                     />
                 </View>
             )}
+            {!!user?.savedLocations?.length && (
+                <View
+                    style={[
+                        styles.card,
+                        styles.shadow,
+                        { backgroundColor: Colors[theme].card },
+                    ]}
+                >
+                    <UserSavedAddress
+                        onSelectAddress={(address, label, coordinates) => {
+                            // 🔥 Close keyboard FIRST
+                            Keyboard.dismiss();
+
+                            // 🔒 Snapshot active input safely
+                            const target = activeInput ?? "pickup";
+
+                            if (target === "pickup") {
+                                setPickup(address);
+                                pickupRef.current?.blur();
+                                isDriver
+                                    ? dispatch(
+                                        setDriversCurrentLocations({
+                                            address,
+                                            coords: coordinates,
+                                        })
+                                    )
+                                    : dispatch(
+                                        setPickupLocation({
+                                            address,
+                                            coords: coordinates,
+                                        })
+                                    );
+                            } else {
+                                setDestination(address);
+                                destinationRef.current?.blur();
+                                isDriver
+                                    ? dispatch(
+                                        setDriversDestinationLocations({
+                                            address,
+                                            coords: coordinates,
+                                        })
+                                    )
+                                    : dispatch(
+                                        setDropoffLocation({
+                                            address,
+                                            coords: coordinates,
+                                        })
+                                    );
+                            }
+                        }}
+
+                    />
+                </View>
+            )}
 
             {/* Seats */}
-            <View style={[styles.card, styles.shadow, { backgroundColor: Colors[theme].card }]}>
-                <Text style={styles.label}>{isDriver ? "Seats Available" : "Number of People"}</Text>
-                <View style={[styles.seatRow, { backgroundColor: Colors[theme].seatBox, borderRadius: 16, padding: 10 }]}>
+            <View
+                style={[
+                    styles.card,
+                    styles.shadow,
+                    { backgroundColor: Colors[theme].card },
+                ]}
+            >
+                <Text style={styles.label}>
+                    {isDriver ? "Seats Available" : "Number of People"}
+                </Text>
+
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={[
+                        styles.seatRow,
+                        {
+                            backgroundColor: Colors[theme].seatBox,
+                            borderRadius: 16,
+                            padding: 10,
+                        },
+                    ]}
+                >
                     {SEAT_OPTIONS.map((n) => (
                         <TouchableOpacity
                             key={n}
                             onPress={() => handelOnSeatAvailable(n)}
-                            style={[styles.seat, seats === n && { backgroundColor: Colors[theme].seatSelectedBg }]}
+                            style={[
+                                styles.seat,
+                                seats === n && {
+                                    backgroundColor: Colors[theme].seatSelectedBg,
+                                },
+                            ]}
                         >
-                            <Text style={{ fontWeight: "700", color: seats === n ? Colors[theme].seatSelectedText : Colors[theme].seatText }}>{n}</Text>
+                            <Text
+                                style={{
+                                    fontWeight: "700",
+                                    color:
+                                        seats === n
+                                            ? Colors[theme].seatSelectedText
+                                            : Colors[theme].seatText,
+                                }}
+                            >
+                                {n}
+                            </Text>
                         </TouchableOpacity>
                     ))}
-                </View>
+                </ScrollView>
             </View>
+
+            {user?.role === "rider" && <FindDriverToggle theme={theme} searchValue={searchValue} setSearchValue={setSearchValue} />}
+
+            {errorMessage !== "" && <View style={[styles.card, styles.shadow, { backgroundColor: Colors[theme].card }]}>
+                <Text style={{ color: "red" }}>{errorMessage + "!"}</Text>
+            </View>}
 
             {/* Action Button */}
             <View style={styles.goButtonContainer}>
-
                 {isDriver ?
                     (isOnline ?
                         <GoButton handleGoOnline={() => handleGoOnline(true, "update location")} loading={loading} updateRoute={isOnline} /> :
@@ -462,4 +579,15 @@ const styles = StyleSheet.create({
     seatRow: { flexDirection: "row", gap: 10, marginTop: 10 },
     seat: { minWidth: 48, paddingVertical: 12, borderRadius: 14, alignItems: "center", borderWidth: 1, borderColor: "#ccc" },
     goButtonContainer: { position: "absolute", bottom: 10, left: 0, right: 0, alignItems: "center", zIndex: 999, paddingVertical: 12 },
+    button: {
+        marginTop: 16,
+        alignSelf: "center",
+    },
+    inner: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "flex-end",
+        marginEnd: 8
+    },
+
 });

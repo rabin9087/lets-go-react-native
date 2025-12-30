@@ -1,4 +1,5 @@
-import { useAppSelector } from "@/app/store/hooks";
+import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
+import { setOpenModal } from "@/app/store/slices/user.slice";
 import React, { useEffect, useRef } from "react";
 import {
     Animated,
@@ -6,16 +7,22 @@ import {
     Platform,
     StyleSheet,
     Text,
+    TouchableOpacity,
     View,
 } from "react-native";
 
-export const FindingDriverModal = () => {
-    const { tripAccepted } = useAppSelector((s) => s.tripInfo);
+type ConfirmModalProps = {
+    onConfirm: () => void;
+    data: string
+};
 
+export const ConfirmModal: React.FC<ConfirmModalProps> = ({ onConfirm, data }) => {
+    const dispatch = useAppDispatch();
+    const { openModal } = useAppSelector((s) => s.userInfo);
     const translateX = useRef(new Animated.Value(-100)).current;
 
     useEffect(() => {
-        if (tripAccepted) return;
+        if (!openModal) return;
 
         Animated.loop(
             Animated.sequence([
@@ -31,37 +38,40 @@ export const FindingDriverModal = () => {
                 }),
             ])
         ).start();
-    }, [tripAccepted]);
+    }, [openModal]);
+
+    const handleCancel = () => {
+        dispatch(setOpenModal(false));
+    };
+
+    const handleConfirm = () => {
+        onConfirm(); // perform your task
+        dispatch(setOpenModal(false));
+    };
 
     return (
-        <Modal
-            transparent
-            visible={!tripAccepted}
-            animationType="fade"
-            statusBarTranslucent
-        >
+        <Modal transparent visible={openModal} animationType="fade" statusBarTranslucent>
             <View style={styles.overlay}>
                 <View style={styles.container}>
                     {/* SEARCH LINE */}
-                    <View style={styles.lineWrapper}>
-                        <Animated.View
-                            style={[
-                                styles.movingLine,
-                                { transform: [{ translateX }] },
-                            ]}
-                        />
-                    </View>
-
-                    <Text style={styles.title}>Finding a driver</Text>
+                    <Text style={styles.title}>Confirm { data}</Text>
                     <Text style={styles.subtitle}>
-                        Please wait while we match you with a nearby driver
                     </Text>
+
+                    {/* Buttons */}
+                    <View style={styles.buttonRow}>
+                        <TouchableOpacity style={[styles.button, styles.cancelBtn]} onPress={handleCancel}>
+                            <Text style={styles.btnText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.button, styles.confirmBtn]} onPress={handleConfirm}>
+                            <Text style={styles.btnText}>Confirm</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
         </Modal>
     );
 };
-
 
 const styles = StyleSheet.create({
     overlay: {
@@ -103,7 +113,30 @@ const styles = StyleSheet.create({
         color: "#6B7280",
         textAlign: "center",
         marginTop: 6,
+        marginBottom: 20,
+    },
+    buttonRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        width: "100%",
+        paddingHorizontal: 10,
+    },
+    button: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 10,
+        marginHorizontal: 5,
+        alignItems: "center",
+    },
+    cancelBtn: {
+        backgroundColor: "#D1D5DB", // gray
+    },
+    confirmBtn: {
+        backgroundColor: "#10B981", // green
+    },
+    btnText: {
+        color: "#fff",
+        fontWeight: "600",
+        fontSize: 16,
     },
 });
-
-

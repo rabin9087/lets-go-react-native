@@ -1,6 +1,7 @@
 import { respondToTrip } from "@/app/axios/trip";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 import { clearIncomingRide, setPickedup, setShowModal } from "@/app/store/slices/trip.slice";
+import { tripJoinSocket } from "@/app/utils/sockets/rider.socket";
 import { socket } from "@/app/utils/sockets/socket";
 import { useEffect, useState } from "react";
 import {
@@ -63,8 +64,9 @@ export default function IncomingRideModal() {
             setLoadingAction("accept");
             dispatch(setShowModal(false))
             dispatch(setPickedup(false))
-            await respondToTrip({ _id: incomingRide._id as string, status: "accepted", driverId: user?._id as string });
-            socket.emit("trip:join", { tripId: incomingRide._id }, "coming from modal");
+            const res = await respondToTrip({ _id: incomingRide._id as string, status: "accepted", driverId: user?._id as string });
+            console.log("After accept ✅🥱🐱🐷: ", res?.newTrip?._id)
+            tripJoinSocket(res?.newTrip?._id as string, user?.role as string)
         } finally {
             setLoadingAction(null);
         }
@@ -91,7 +93,7 @@ export default function IncomingRideModal() {
     return (
         <View style={styles.overlay}>
             <View style={styles.card}>
-                <Text style={styles.title}>🚕 Incoming Ride</Text>
+                <Text style={styles.title}>{ incomingRide.rider}</Text>
 
                 {/* 💰 PRICE */}
                 <Text style={styles.price}>${incomingRide.price}</Text>
