@@ -1,60 +1,47 @@
 import { ICoordinates } from '@/app/axios/types';
 import { IUser } from '@/app/pages/user/user.types';
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { Platform } from 'react-native';
-
-export const defaultUser: Partial<IUser> = {
-    _id: "",
-    name: "",
-    email: "",
-    phone: "",
-    role: "",
-    profileImage: "",
-    status: "active", 
-    refreshJWT: "",
-  
-} as const;
-
-
-export type NavigationApp = "android" | "ios";
-
+import { createSlice, PayloadAction, WritableDraft } from '@reduxjs/toolkit';
+export type NavigationApp = "android" | "ios" | "";
 
 export type TInitialState = {
-    user: Partial<IUser>,
-    navigationApp: NavigationApp;
+    user: Partial<IUser> | null,
     openModal: boolean;
+    tempIdentifier: string | null;
+
 }
 
 export const initialState: TInitialState = {
-    user: defaultUser,
-    navigationApp: Platform.OS === "ios" ? "ios" : "android",
-    openModal: false
+    user: null,
+    openModal: false,
+    tempIdentifier: null,
 };
 
 const userSlice = createSlice({
   name: 'users',
   initialState,
   reducers: {
-      setUser: (state, {payload}: PayloadAction<IUser>) => {
-          state.user = payload
-    },
-    setDriverOnlineStatus: (state, {payload}: PayloadAction<boolean>) => {
-          if (state.user.driverProfile) {
-                state.user.driverProfile.isOnline = payload;
-            }
-      },
-      setNavigationApp: (state, {payload}: PayloadAction<NavigationApp>) => {
-          state.navigationApp = payload
-      },
+     setUser: (state, { payload }: PayloadAction<Partial<IUser> | null>) => {
+            state.user = payload as WritableDraft<Partial<IUser>> | null;
+},
+      setNavigationApp: (state, { payload }: PayloadAction<NavigationApp>) => {
+    // 1. You cannot use ?. on the left side of an assignment
+    // 2. Check if state.user exists before assigning
+    if (state.user) {
+        state.user.navigationMap = payload;
+    }
+},
       setSavedAddress: (state, {payload}: PayloadAction<{label: string, coordinates: ICoordinates, address: string,}>) => {
          state?.user?.savedLocations?.push(payload )
       },
       setOpenModal: (state, {payload}: PayloadAction<boolean>) => {
           state.openModal = payload
       },
+      setTempIdentifier: (state, action) => {
+        state.tempIdentifier = action.payload;
+},
   },
 });
 
-export const { setUser, setDriverOnlineStatus, setNavigationApp, setOpenModal } = userSlice.actions;
+export const { setUser, setNavigationApp, setOpenModal, setTempIdentifier } = userSlice.actions;
 
 export default userSlice.reducer;

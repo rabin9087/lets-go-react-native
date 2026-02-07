@@ -1,10 +1,21 @@
-import { axiosProcessor, rootApi } from ".";
-import { socket } from "../utils/sockets/socket";
-import { IResponse } from "./types";
+import { axiosProcessor } from ".";
+import { ILocation } from "../store/slices/trip.slice";
+import { rootApi } from "./axios";
+import { TripsData } from "./types";
 
 const tripApi = rootApi + "/api/v1/trip";
 // √ride-request
-export const requestTripByPickupAndDropoffLocation = async (data: any) => {
+
+export type IRideRequesType = {
+            pickupLocation: ILocation,
+            dropoffLocation: ILocation,
+            people: number,
+            regoPhone?: string | null,
+            rideType?: string;
+        }
+
+export const requestTripByPickupAndDropoffLocation = async (data: IRideRequesType) => {
+
     try {
     const response = await axiosProcessor({
     method: "post",
@@ -18,7 +29,22 @@ export const requestTripByPickupAndDropoffLocation = async (data: any) => {
     } 
 }
 
-export const requestTripeByPickupLocation = async (data: any) => {
+export const fareCalulateTripByPickupAndDropoffLocation = async (data: IRideRequesType) => {
+
+    try {
+    const response = await axiosProcessor({
+    method: "post",
+    url: `${tripApi}/pickup-dropoff/trip-fare`,
+    isPrivate: true,
+    obj: data,
+    })
+        return response
+    } catch (error) {
+        console.log(error)
+    } 
+}
+
+export const requesITripeByPickupLocation = async (data: any) => {
     try {
     const response = await axiosProcessor({
     method: "post",
@@ -33,13 +59,13 @@ export const requestTripeByPickupLocation = async (data: any) => {
 }
 
 export type IResponseTrip = {
- _id: string,
-    status?: "requested" | "ontrip" | "cancelled" | "completed" | "accepted" | "pickedup" | "rejected",
+ tripId: string,
+ status?: "requested" | "ontrip" | "cancelled" | "completed" | "accepted" | "pickedup" | "rejected" | "timeout"
   driverId?: string
 }
 
 export const respondToTrip = async (
- {_id, status, driverId}: IResponseTrip
+ {tripId, status, driverId}: IResponseTrip
 ) => {
     // 📡 API
      try {
@@ -47,7 +73,21 @@ export const respondToTrip = async (
     method: "post",
     url: `${tripApi}/trip-response`,
     isPrivate: true,
-    obj: {_id , status, driverId},
+    obj: {tripId , status, driverId},
+    })
+        return response
+    } catch (error) {
+        console.log(error)
+    } 
+};
+
+export const getATrip = async (_id: string) => {
+    // 📡 API
+     try {
+    const response = await axiosProcessor({
+    method: "get",
+    url: `${tripApi}/tripId/${_id}`,
+    isPrivate: true,
     })
         return response.data
     } catch (error) {
@@ -55,3 +95,34 @@ export const respondToTrip = async (
     } 
 };
 
+export const getUserTrips = async (page: number, limit: number) => {
+    // 📡 API
+     try {
+    const response = await axiosProcessor({
+    method: "get",
+    url: `${tripApi}/allTrips`,
+    isPrivate: true,
+        params: { page, limit }, 
+    
+    })
+        return response.data?.trips as TripsData 
+    } catch (error) {
+        console.log(error)
+    } 
+};
+
+export const cancelTrip = async(tripId: string, cancellationReason: string) => {
+    // 📡 API
+     try {
+    const response = await axiosProcessor({
+    method: "patch",
+    url: `${tripApi}/cancelTrip`,
+    isPrivate: true,
+    obj: { tripId, cancellationReason }, 
+    
+    })
+        return response
+    } catch (error) {
+        console.log(error)
+    } 
+};

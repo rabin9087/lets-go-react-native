@@ -1,10 +1,11 @@
-import { axiosProcessor, rootApi } from ".";
-import { ILoginPayload } from "../pages/user/UserSignin";
+import { axiosProcessor } from ".";
 import { IUser } from "../pages/user/user.types";
-import { ICoordinates } from "./types";
+import { getDeviceInfo } from "../utils/device/getDeviceInfo";
+import { rootApi } from "./axios";
+import { getTokens } from "./secureTokens";
+import { ICoordinates, serverReturnDataType } from "./types";
 
 const userApi = rootApi + "/api/v1/user";
-
 export const createUser = (data: Partial<IUser>) => {
   return axiosProcessor({
     method: "post",
@@ -28,15 +29,17 @@ export const getAUser = async (phone: string) => {
   } 
 };
 
-export const loginUser = async(data: ILoginPayload) => {
+export const loginUser = async(data: any) => {
   try {
+    console.log(data)
     const response = await axiosProcessor({
     method: "post",
     url: `${userApi}/sign-in`,
-    isPrivate: true,
     obj: data,
     });
-    return response.data
+
+    console.log(response)
+    return response as serverReturnDataType
   } catch (error) {
     console.log(error)
   }
@@ -44,11 +47,14 @@ export const loginUser = async(data: ILoginPayload) => {
 
 export const logoutUser = async() => {
   try {
+    const pushToken = await getTokens({ tokenName: "last_push_token" });
+    const refreshToken = await getTokens({ tokenName: "refreshJWT" })
+    console.log("last_push_token",pushToken, refreshToken)
     const response = await axiosProcessor({
-    method: "get",
+    method: "post",
     url: `${userApi}/logout`,
-      isPrivate: true,
-    refreshToken: true,
+    isPrivate: true,
+    obj: {pushToken, refreshToken}
     });
     console.log("Backend response", response)
     return response
@@ -57,13 +63,20 @@ export const logoutUser = async() => {
   }
 };
 
-export const autoLoginUser = async() => {
+export const autoLoginUser = async () => {
+  const refreshJWT = await getTokens({ tokenName: "refreshJWT" });
+  const sessionId = await getTokens({ tokenName: "sessionId" });
+  
+  if (!refreshJWT || !sessionId) return null;
   try {
     const response = await axiosProcessor({
     method: "get",
-    url: `${userApi}/get-accessjwt`,
+    url: `${userApi}/auto-login`,
     isPrivate: true,
     refreshToken: true,
+    extraHeaders: {
+      "x-session-id": sessionId,
+      },
     });
     return response 
   } catch (error) {
@@ -77,7 +90,6 @@ export const addUserAddress = async ({label, address, coords }: {label: string, 
     method: "post",
     url: `${userApi}/add-address`,
     isPrivate: true,
-    refreshToken: true,
     obj: {label, address, coords}
     });
     return response 
@@ -92,11 +104,69 @@ export const pushNotificationToken = async ({ token }: { token: string }) => {
     method: "post",
     url: `${userApi}/push-token`,
     isPrivate: true,
-      refreshToken: true,
-    obj: {pushToken: token}
+    obj: {token}
     });
     return response 
   } catch (error) {
     console.log(error)
   }
+};
+
+export const removePushNotificationToken = async ({ token }: { token: string }) => {
+  try {
+    const response = await axiosProcessor({
+    method: "post",
+    url: `${userApi}/push-token`,
+    isPrivate: true,
+    obj: {token}
+    });
+    return response 
+  } catch (error) {
+    console.log(error)
+  }
+};
+
+// services/socialLogin.ts
+export const socialLogin = async (
+  provider: "google" | "facebook",
+  token: string
+) => {
+  return axiosProcessor({
+    method: "post",
+    url: "/social-login",
+    obj: {
+      provider,
+      token,
+    },
+  });
+};
+
+export const updateNavigationMap = async (navigationMap: "ios" | "android") => {
+  try {
+    const response = await axiosProcessor({
+    method: "patch",
+    url: `${userApi}/navigationMap`,
+    isPrivate: true,
+    obj: {navigationMap}
+    });
+    return response 
+  } catch (error) {
+    console.log(error)
+  }
+};
+
+export const requestPasswordReset = async (email_phone: string) => {
+  return axiosProcessor({
+    method: "post",
+    url: `${userApi}/forgot-password`,
+    obj: { email_phone },
+  });
+};
+
+export const resetPassword = async (password: string, email_phone: string) => {
+  return axiosProcessor({
+    method: "post",
+    url: `${userApi}/reset-password`,
+    obj: { password, email_phone },
+  });
 };

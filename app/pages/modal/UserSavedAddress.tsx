@@ -1,6 +1,6 @@
 import { ICoordinates } from "@/app/axios/types";
 import { useAppSelector } from "@/app/store/hooks";
-import { useColorScheme } from "@/components/useColorScheme.web";
+import { useColorScheme } from "@/components/useColorScheme";
 import Colors from "@/constants/Colors";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
@@ -10,6 +10,7 @@ import {
     Text,
     TouchableOpacity,
     View,
+    Platform,
 } from "react-native";
 
 /* ---------------- TYPES ---------------- */
@@ -36,59 +37,49 @@ export const UserSavedAddress: React.FC<UserSavedAddressProps> = ({
     const { user } = useAppSelector((s) => s.userInfo);
     const savedLocations: ISavedLocation[] = user?.savedLocations ?? [];
 
-    const theme: "light" | "dark" =
-        useColorScheme() === "dark" ? "dark" : "light";
+    const theme = useColorScheme() ?? "light";
     const colors = Colors[theme];
+    const isDark = theme === "dark";
 
-    if (!savedLocations.length) {
-        return null; // ✅ correct
-    }
+    if (!savedLocations.length) return null;
 
     const iconMap: Record<string, keyof typeof Ionicons.glyphMap> = {
-        home: "home-outline",
-        work: "briefcase-outline",
-        office: "briefcase-outline",
-        other: "location-outline",
+        home: "home",
+        work: "briefcase",
+        office: "briefcase",
+        other: "location",
     };
 
     const renderItem = ({ item }: { item: ISavedLocation }) => {
-        // ✅ safety guard
-        if (
-            !item.coordinates ||
-            typeof item.coordinates.latitude !== "number" ||
-            typeof item.coordinates.longitude !== "number"
-        ) {
-            return null;
-        }
+        // Validation check to prevent crashes on bad data
+        if (!item?.coordinates?.latitude || !item?.coordinates?.longitude) return null;
 
-        const icon =
-            iconMap[item.label.toLowerCase()] || "location-outline";
+        const iconName = iconMap[item.label.toLowerCase()] || "location";
 
         return (
             <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() =>
-                    onSelectAddress?.(
-                        item.address,
-                        item.label,
-                        item.coordinates
-                    )
-                }
+                activeOpacity={0.7}
+                onPress={() => onSelectAddress?.(item.address, item.label, item.coordinates)}
                 style={[
                     styles.addressCard,
-                    { borderColor: colors.tint },
+                    {
+                        backgroundColor: isDark ? "#2C2C2E" : "#F9FAFB",
+                        borderColor: isDark ? "#3A3A3C" : "#F3F4F6",
+                    },
                 ]}
             >
                 <View style={styles.cardHeader}>
-                    <Ionicons name={icon} size={16} color={colors.tint} />
-                    <Text style={[styles.labelText, { color: colors.text }]}>
-                        {item.label.toUpperCase()}
+                    <View style={[styles.iconContainer, { backgroundColor: isDark ? "#3A3A3C" : "#FFFFFF" }]}>
+                        <Ionicons name={iconName} size={14} color={colors.tint} />
+                    </View>
+                    <Text style={[styles.labelText, { color: colors.text }]} numberOfLines={1}>
+                        {item.label}
                     </Text>
                 </View>
 
                 <Text
-                    style={[styles.addressText, { color: colors.text }]}
-                    numberOfLines={2}
+                    style={[styles.addressText, { color: isDark ? "#9CA3AF" : "#6B7280" }]}
+                    numberOfLines={1}
                 >
                     {item.address}
                 </Text>
@@ -97,52 +88,72 @@ export const UserSavedAddress: React.FC<UserSavedAddressProps> = ({
     };
 
     return (
-        <FlatList
-            horizontal
-            data={savedLocations}
-            keyExtractor={(item, index) => `${item.label}-${index}`}
-            renderItem={renderItem}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.listContainer}
-        />
+        <View style={styles.wrapper}>
+            <FlatList
+                horizontal
+                data={savedLocations}
+                keyExtractor={(item, index) => `${item.label}-${index}`}
+                renderItem={renderItem}
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.listContainer}
+                // Material 3 / iOS 17 Snap behavior
+                decelerationRate="fast"
+                snapToAlignment="start"
+                snapToInterval={172} // card width (160) + gap (12)
+            />
+        </View>
     );
 };
 
 /* ---------------- STYLES ---------------- */
 
 const styles = StyleSheet.create({
-    listContainer: {
-        gap: 6,
-        paddingHorizontal: 4,
+    wrapper: {
+        width: '100%',
+        marginVertical: 8,
     },
-
+    listContainer: {
+        paddingHorizontal: 16, // Standard alignment
+        gap: 12,
+    },
     addressCard: {
         padding: 12,
-        borderRadius: 14,
+        borderRadius: 16,
         borderWidth: 1,
-        minWidth: 160,
-        backgroundColor: "#fff",
-        shadowColor: "#000",
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
+        width: 160,
+        // Modern UI focuses on subtle borders rather than heavy shadows in nested cards
     },
-
     cardHeader: {
         flexDirection: "row",
         alignItems: "center",
-        gap: 4,
-        marginBottom: 4,
+        gap: 8,
+        marginBottom: 6,
     },
-
+    iconContainer: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        justifyContent: "center",
+        alignItems: "center",
+        ...Platform.select({
+            ios: {
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.1,
+                shadowRadius: 2,
+            },
+            android: {
+                elevation: 1,
+            }
+        })
+    },
     labelText: {
-        fontSize: 13,
-        fontWeight: "600",
+        fontSize: 14,
+        fontWeight: "700",
+        flex: 1,
     },
-
     addressText: {
         fontSize: 12,
-        opacity: 0.85,
+        fontWeight: "400",
     },
 });

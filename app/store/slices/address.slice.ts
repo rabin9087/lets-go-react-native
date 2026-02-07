@@ -19,7 +19,7 @@ const initialState: AddressState = {
 };
 
 const addressSlice = createSlice({
-  name: "address",
+  name: "addressData",
   initialState,
   reducers: {
     saveAddress: (state, action: PayloadAction<ILabelAddress>) => {

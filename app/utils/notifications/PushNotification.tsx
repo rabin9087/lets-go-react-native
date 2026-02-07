@@ -1,8 +1,8 @@
-import { useEffect } from "react";
-import { useRouter } from "expo-router";
-import * as Notifications from "expo-notifications";
 import { useAppDispatch } from "@/app/store/hooks";
-import { IIncomingRide, setIncomingRide } from "@/app/store/slices/trip.slice";
+import { setIncomingRide } from "@/app/store/slices/trip.slice";
+import * as Notifications from "expo-notifications";
+import { useRouter } from "expo-router";
+import { useEffect } from "react";
 
 export default function PushNotificationHandler() {
     const router = useRouter();

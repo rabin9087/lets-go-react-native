@@ -2,7 +2,6 @@ import { respondToTrip } from "@/app/axios/trip";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 import { clearIncomingRide, setPickedup, setShowModal } from "@/app/store/slices/trip.slice";
 import { tripJoinSocket } from "@/app/utils/sockets/rider.socket";
-import { socket } from "@/app/utils/sockets/socket";
 import { useEffect, useState } from "react";
 import {
     ActivityIndicator,
@@ -10,295 +9,231 @@ import {
     Text,
     TouchableOpacity,
     View,
+    Modal,
+    Dimensions,
+    Platform,
+    ScrollView,
 } from "react-native";
 
+const { width, height } = Dimensions.get("window");
+
 export default function IncomingRideModal() {
-    const { incomingRide, expiresAt } = useAppSelector((s) => s.tripInfo);
-    const { user } = useAppSelector((s) => s.userInfo);
     const dispatch = useAppDispatch();
+    const { incomingRide, expiresAt, showModal } = useAppSelector((s) => s.tripInfo);
+    const { user } = useAppSelector((s) => s.userInfo);
+
     const [secondsLeft, setSecondsLeft] = useState(45);
-    const [loadingAction, setLoadingAction] = useState<
-        "accept" | "reject" | null
-    >(null);
-    /* ⏱ Countdown */
+    const [loadingAction, setLoadingAction] = useState<"accept" | "reject" | null>(null);
+
     useEffect(() => {
-        if (!incomingRide || !expiresAt || loadingAction) return;
+        if (!incomingRide || !expiresAt || loadingAction || !showModal) return;
 
         const interval = setInterval(() => {
-            const left = Math.max(
-                0,
-                Math.ceil((expiresAt - Date.now()) / 1000)
-            );
-
+            const now = Date.now();
+            const left = Math.max(0, Math.ceil((expiresAt as number - now) / 1000));
             setSecondsLeft(left);
 
-            if (left === 0) {
+            if (left <= 0) {
                 clearInterval(interval);
-                setLoadingAction("reject");
-
-                respondToTrip({ _id: incomingRide._id as string, status: "rejected", driverId: user?._id as string }).finally(() => {
-                    dispatch(clearIncomingRide());
-                    setLoadingAction(null);
-                });
+                handleAction("timeout");
             }
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [incomingRide?._id, expiresAt, loadingAction]);
+    }, [incomingRide?._id, expiresAt, loadingAction, showModal]);
 
-    /* Reset timer */
-    useEffect(() => {
-        if (incomingRide) {
-            setSecondsLeft(60);
-            setLoadingAction(null);
-        }
-    }, [incomingRide]);
-
-    if (!incomingRide) return null;
-
-    /* ✅ Accept */
-    const handleAccept = async () => {
-        if (loadingAction) return;
+    const handleAction = async (status: "accepted" | "rejected" | "timeout") => {
+        if (loadingAction || !incomingRide?._id) return;
+        const isAccept = status === "accepted";
+        setLoadingAction(isAccept ? "accept" : "reject");
 
         try {
-            setLoadingAction("accept");
-            dispatch(setShowModal(false))
-            dispatch(setPickedup(false))
-            const res = await respondToTrip({ _id: incomingRide._id as string, status: "accepted", driverId: user?._id as string });
-            console.log("After accept ✅🥱🐱🐷: ", res?.newTrip?._id)
-            tripJoinSocket(res?.newTrip?._id as string, user?.role as string)
+            const res = await respondToTrip({
+                tripId: incomingRide._id as string,
+                status,
+                driverId: user?._id as string,
+            });
+
+            if (isAccept) {
+                if (res?.data?.newTrip?._id) {
+                    tripJoinSocket(res.data.newTrip._id, user?.role as string);
+                }
+                dispatch(setPickedup(false));
+            } else {
+                dispatch(clearIncomingRide());
+            }
+            dispatch(setShowModal(false));
+        } catch (err) {
+            console.error(`Trip ${status} failed:`, err);
         } finally {
             setLoadingAction(null);
         }
     };
 
-    /* ❌ Reject */
-    const handleReject = async () => {
-        if (loadingAction) return;
-
-        try {
-            setLoadingAction("reject");
-
-            await respondToTrip({ _id: incomingRide._id as string, status: "rejected", driverId: user?._id as string }
-            );
-            dispatch(setShowModal(false))
-            dispatch(clearIncomingRide());
-        } finally {
-            setLoadingAction(null);
-        }
-    };
-
-    const isLoading = loadingAction !== null;
+    if (!incomingRide || !showModal) return null;
 
     return (
-        <View style={styles.overlay}>
-            <View style={styles.card}>
-                <Text style={styles.title}>{ incomingRide.rider}</Text>
+        <Modal
+            animationType="slide"
+            transparent={true}
+            visible={showModal}
+            statusBarTranslucent={true}
+        >
+            <View style={styles.overlay}>
+                <View style={styles.card}>
+                    {/* Progress indicator for timer at the top of the card */}
+                    <View style={[styles.timerBar, { width: `${(secondsLeft / 45) * 100}%` }]} />
 
-                {/* 💰 PRICE */}
-                <Text style={styles.price}>${incomingRide.price}</Text>
+                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+                        <View style={styles.header}>
+                            <Text style={styles.title}>{incomingRide?.riderName || "New Request"}</Text>
+                            <Text style={styles.price}>
+                                ${Number(incomingRide?.driverEarning || 0).toFixed(2)}
+                            </Text>
+                        </View>
 
-                {/* 📊 STATS */}
-                <View style={styles.statsRow}>
-                    <View style={styles.statBox}>
-                        <Text style={styles.statValue}>
-                            {incomingRide.distance}
-                        </Text>
-                        <Text style={styles.statLabel}>Distance</Text>
+                        {/* 📊 STATS */}
+                        <View style={styles.statsRow}>
+                            <View style={styles.statBox}>
+                                <Text style={styles.statValue}>{incomingRide?.distanceKm?.toFixed(1) || 0} km</Text>
+                                <Text style={styles.statLabel}>Dist.</Text>
+                            </View>
+                            <View style={styles.statBox}>
+                                <Text style={styles.statValue}>{incomingRide?.durationMin?.toFixed(0) || 0}m</Text>
+                                <Text style={styles.statLabel}>Time</Text>
+                            </View>
+                            <View style={styles.statBox}>
+                                <Text style={styles.statValue}>{incomingRide?.people || 1}</Text>
+                                <Text style={styles.statLabel}>Passanger</Text>
+                            </View>
+                        </View>
+
+                        {/* 📍 LOCATIONS */}
+                        <View style={styles.locationBox}>
+                            <Text style={styles.locationText} numberOfLines={1}>
+                                <Text style={{ fontWeight: 'bold', color: '#22c55e' }}>● </Text>
+                                {incomingRide?.pickupLocation?.address}
+                            </Text>
+                            <View style={styles.verticalDivider} />
+                            <Text style={styles.locationText} numberOfLines={1}>
+                                <Text style={{ fontWeight: 'bold', color: '#ef4444' }}>■ </Text>
+                                {incomingRide?.dropoffLocation?.address}
+                            </Text>
+                        </View>
+                    </ScrollView>
+
+                    {/* 🔘 ACTIONS */}
+                    <View style={styles.actions}>
+                        <TouchableOpacity
+                            style={[styles.reject, loadingAction !== null && styles.disabledBtn]}
+                            onPress={() => handleAction("rejected")}
+                            disabled={loadingAction !== null}
+                        >
+                            {loadingAction === "reject" ? (
+                                <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                                <Text style={styles.btnTextSmall}>Decline</Text>
+                            )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.accept, loadingAction !== null && styles.disabledBtn]}
+                            onPress={() => handleAction("accepted")}
+                            disabled={loadingAction !== null}
+                        >
+                            {loadingAction === "accept" ? (
+                                <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                                <Text style={styles.btnText}>Accept Ride ({secondsLeft}s)</Text>
+                            )}
+                        </TouchableOpacity>
                     </View>
-
-                    <View style={styles.statBox}>
-                        <Text style={styles.statValue}>
-                            {incomingRide.duration}
-                        </Text>
-                        <Text style={styles.statLabel}>Duration</Text>
-                    </View>
-
-                    <View style={styles.statBox}>
-                        <Text style={styles.statValue}>
-                            {incomingRide.people}
-                        </Text>
-                        <Text style={styles.statLabel}>People</Text>
-                    </View>
-                </View>
-
-                {/* 📍 LOCATIONS */}
-                <View style={styles.locationBox}>
-                    <Text style={styles.locationLabel}>📍 Pickup</Text>
-                    <Text style={styles.locationText}>
-                        {incomingRide.pickupLocation.address}
-                    </Text>
-
-                    <Text style={[styles.locationLabel, { marginTop: 8 }]}>
-                        🎯 Dropoff
-                    </Text>
-                    <Text style={styles.locationText}>
-                        {incomingRide.dropoffLocation.address}
-                    </Text>
-                </View>
-
-                {/* ⏱ TIMER */}
-                <Text style={styles.timer}>
-                    ⏱ {secondsLeft}s remaining
-                </Text>
-
-                {/* 🔘 ACTIONS */}
-                <View style={styles.actions}>
-                    <TouchableOpacity
-                        style={[
-                            styles.reject,
-                            isLoading && styles.disabledBtn,
-                        ]}
-                        onPress={handleReject}
-                        disabled={isLoading}
-                    >
-                        {loadingAction === "reject" ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.btnText}>Reject</Text>
-                        )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[
-                            styles.accept,
-                            isLoading && styles.disabledBtn,
-                        ]}
-                        onPress={handleAccept}
-                        disabled={isLoading}
-                    >
-                        {loadingAction === "accept" ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.btnText}>Accept</Text>
-                        )}
-                    </TouchableOpacity>
                 </View>
             </View>
-        </View>
+        </Modal>
     );
 }
 
-/* 🎨 STYLES */
 const styles = StyleSheet.create({
     overlay: {
-        position: "absolute",
-        top: 0,
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: "rgba(0,0,0,0.45)",
-        justifyContent: "flex-end",
+        flex: 1,
+        backgroundColor: "rgba(0,0,0,0.4)",
+        justifyContent: "flex-end", // Push to bottom
         alignItems: "center",
-        zIndex: 999,
     },
-
     card: {
-        width: "92%",
+        width: width - 20, // Margin left/right of 10
+        height: height * 0.32, // Size: ~30-32% of screen height
         backgroundColor: "#ffffff",
         borderRadius: 24,
+        marginBottom: Platform.OS === 'ios' ? 34 : 20, // Margin bottom 
         padding: 20,
-        marginBottom: 80,
+        overflow: 'hidden',
+        // Shadow for iOS
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+        // Elevation for Android
         elevation: 10,
     },
-
-    title: {
-        fontSize: 18,
-        fontWeight: "700",
-        textAlign: "center",
+    timerBar: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        height: 4,
+        backgroundColor: '#22c55e',
     },
-
-    price: {
-        fontSize: 36,
-        fontWeight: "800",
-        color: "#16a34a",
-        textAlign: "center",
-        marginVertical: 12,
+    scrollContent: {
+        paddingBottom: 10,
     },
-
-    statsRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        marginVertical: 12,
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
     },
-
+    title: { fontSize: 18, fontWeight: "700", color: '#1e293b' },
+    price: { fontSize: 24, fontWeight: "900", color: "#1e293b" },
+    statsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 15 },
     statBox: {
         flex: 1,
-        backgroundColor: "#f1f5f9",
-        paddingVertical: 14,
-        borderRadius: 16,
+        backgroundColor: "#f8fafc",
+        paddingVertical: 8,
+        borderRadius: 12,
         marginHorizontal: 4,
         alignItems: "center",
+        borderWidth: 1,
+        borderColor: '#f1f5f9'
     },
-
-    statValue: {
-        fontSize: 18,
-        fontWeight: "700",
-        color: "#0f172a",
-    },
-
-    statLabel: {
-        fontSize: 12,
-        color: "#64748b",
-        marginTop: 4,
-    },
-
-    locationBox: {
-        backgroundColor: "#f8fafc",
-        padding: 14,
-        borderRadius: 16,
-        marginTop: 6,
-    },
-
-    locationLabel: {
-        fontSize: 13,
-        fontWeight: "600",
-        color: "#475569",
-    },
-
-    locationText: {
-        fontSize: 14,
-        color: "#0f172a",
-    },
-
-    timer: {
-        marginTop: 14,
-        fontSize: 16,
-        fontWeight: "700",
-        textAlign: "center",
-        color: "#dc2626",
-    },
-
+    statValue: { fontSize: 14, fontWeight: "700", color: "#334155" },
+    statLabel: { fontSize: 10, color: "#64748b", fontWeight: '600' },
+    locationBox: { backgroundColor: "#f8fafc", padding: 12, borderRadius: 16 },
+    locationText: { fontSize: 13, color: "#475569", fontWeight: '500' },
+    verticalDivider: { height: 8, width: 1, backgroundColor: '#cbd5e1', marginLeft: 6, marginVertical: 2 },
     actions: {
         flexDirection: "row",
-        marginTop: 18,
+        gap: 10,
+        marginTop: 'auto', // Push buttons to the very bottom of the card
+        paddingTop: 10
     },
-
     accept: {
-        flex: 1,
-        backgroundColor: "#16a34a",
-        paddingVertical: 16,
-        borderRadius: 18,
-        marginLeft: 8,
-        alignItems: "center",
+        flex: 2,
+        backgroundColor: "#22c55e",
+        height: 56,
+        borderRadius: 16,
+        justifyContent: "center",
+        alignItems: "center"
     },
-
     reject: {
         flex: 1,
-        backgroundColor: "#dc2626",
-        paddingVertical: 16,
-        borderRadius: 18,
-        marginRight: 8,
-        alignItems: "center",
+        backgroundColor: "#f1f5f9",
+        height: 56,
+        borderRadius: 16,
+        justifyContent: "center",
+        alignItems: "center"
     },
-
-    disabledBtn: {
-        opacity: 0.7,
-    },
-
-    btnText: {
-        color: "#ffffff",
-        fontSize: 17,
-        fontWeight: "700",
-    },
+    disabledBtn: { opacity: 0.5 },
+    btnText: { color: "#ffffff", fontSize: 16, fontWeight: "700" },
+    btnTextSmall: { color: "#64748b", fontSize: 16, fontWeight: "700" },
 });

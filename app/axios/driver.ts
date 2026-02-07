@@ -1,25 +1,15 @@
-import { axiosProcessor, rootApi } from ".";
-import {ILocation } from "../store/slices/trip.slice";
-import { ICoordinates } from "./types";
+import { axiosProcessor } from ".";
+import { IVehicle } from "../store/slices/types.slice";
+import { rootApi } from "./axios";
 
 const driverApi = rootApi + "/api/v1/driver";
 
-export type IUpdateOnlineStatus = {
-    onlineStatus: boolean,
-    currentLocation: ILocation,
-    destination: ILocation,
-    rego: string,
-    email_phone: string
-    seatAvailable: number;
-    routeGeo?: ICoordinates[]
-}
 
-
-export const updateOnlineStatus = async(data: IUpdateOnlineStatus) => {
+export const addNewVehicle = async(data: IVehicle) => {
   try {
      const response = await axiosProcessor({
-    method: "put",
-    url: `${driverApi}/online`,
+    method: "post",
+    url: `${driverApi}/addVehicle`,
     isPrivate: true,
     obj: data,
      });
@@ -29,20 +19,18 @@ export const updateOnlineStatus = async(data: IUpdateOnlineStatus) => {
   }
 }
 
-export const getAllOnlineDrivers = async(currentLocation: ICoordinates, destinationCoord: ICoordinates) => {
+export const updateVehicle = async(oldRego: string, newRego: string) => {
   try {
-     const response = await axiosProcessor({
-    method: "post",
-    url: `${driverApi}/onlineDrivers`,
+    console.log(oldRego, newRego)
+    const response =
+      await axiosProcessor({
+    method: "patch",
+    url: `${driverApi}/updateInUseVehicle`,
     isPrivate: true,
-    obj: {currentLocation, destination: destinationCoord}
+    obj: {oldRego, newRego},
      });
-    return response.data?.drivers ?? []
+    return response
   } catch (error) {
     console.log(error)
-        return []
-
   }
-
 }
-// getAllOnlineDrivers(currentLocation: ICoordinate, destinationCoord: ICoordinate)

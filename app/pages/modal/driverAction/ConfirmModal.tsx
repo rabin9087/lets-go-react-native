@@ -1,6 +1,7 @@
+import Colors from "@/constants/Colors";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 import { setOpenModal } from "@/app/store/slices/user.slice";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
     Animated,
     Modal,
@@ -9,35 +10,42 @@ import {
     Text,
     TouchableOpacity,
     View,
+    Dimensions,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useColorScheme } from "@/components/useColorScheme";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 type ConfirmModalProps = {
     onConfirm: () => void;
-    data: string
 };
 
-export const ConfirmModal: React.FC<ConfirmModalProps> = ({ onConfirm, data }) => {
+export const ConfirmModal: React.FC<ConfirmModalProps> = ({ onConfirm }) => {
     const dispatch = useAppDispatch();
     const { openModal } = useAppSelector((s) => s.userInfo);
-    const translateX = useRef(new Animated.Value(-100)).current;
+    const { incomingRide, pickedup } = useAppSelector((s) => s.tripInfo);
+    const { onlineDriver } = useAppSelector((s) => s.onlineDriversInfo);
+
+    const theme = useColorScheme() ?? "light";
+    const isDark = theme === "dark";
+    const colors = Colors[theme];
+
+    const insets = useSafeAreaInsets();
+
+    // SMOOTH FIX 1: Use a dedicated Opacity animation to hide layout "snapping"
+    const fadeAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        if (!openModal) return;
-
-        Animated.loop(
-            Animated.sequence([
-                Animated.timing(translateX, {
-                    toValue: 300,
-                    duration: 1200,
-                    useNativeDriver: true,
-                }),
-                Animated.timing(translateX, {
-                    toValue: -100,
-                    duration: 0,
-                    useNativeDriver: true,
-                }),
-            ])
-        ).start();
+        if (openModal) {
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+            }).start();
+        } else {
+            fadeAnim.setValue(0);
+        }
     }, [openModal]);
 
     const handleCancel = () => {
@@ -45,29 +53,78 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({ onConfirm, data }) =
     };
 
     const handleConfirm = () => {
-        onConfirm(); // perform your task
+        onConfirm();
         dispatch(setOpenModal(false));
     };
 
+    // Determine the text based on state
+    const actionText = !onlineDriver?.isOnline
+        ? "Online"
+        : (incomingRide?._id ? (pickedup ? "Drop-off" : "Pickup") : "Offline");
+
+    const isGoingOnline = !onlineDriver?.isOnline;
+
     return (
-        <Modal transparent visible={openModal} animationType="fade" statusBarTranslucent>
+        <Modal
+            transparent
+            visible={openModal}
+            animationType="slide" // Use system slide for smoothness
+            statusBarTranslucent
+            onRequestClose={handleCancel}
+        >
             <View style={styles.overlay}>
-                <View style={styles.container}>
-                    {/* SEARCH LINE */}
-                    <Text style={styles.title}>Confirm { data}</Text>
-                    <Text style={styles.subtitle}>
+                <TouchableOpacity
+                    style={styles.dismissArea}
+                    activeOpacity={1}
+                    onPress={handleCancel}
+                />
+
+                <Animated.View
+                    style={[
+                        styles.container,
+                        {
+                            backgroundColor: isDark ? "#1C1C1E" : "#FFFFFF",
+                            opacity: fadeAnim, // SMOOTH FIX 2: Fade in content
+                            // SMOOTH FIX 3: Safe Area management
+                            paddingBottom: Platform.OS === "ios"
+                                ? (insets.bottom || 30) + 10
+                                : 40,
+                        }
+                    ]}
+                >
+                    <View style={styles.grabHandle} />
+
+                    <Text style={[styles.title, { color: colors.text }]}>
+                        Confirm {actionText}
                     </Text>
 
-                    {/* Buttons */}
+                    <Text style={[styles.subtitle, { color: isDark ? "#9CA3AF" : "#6B7280" }]}>
+                        Are you sure you want to go {isGoingOnline ? "online" : "offline"}?
+                    </Text>
+
                     <View style={styles.buttonRow}>
-                        <TouchableOpacity style={[styles.button, styles.cancelBtn]} onPress={handleCancel}>
-                            <Text style={styles.btnText}>Cancel</Text>
+                        <TouchableOpacity
+                            style={[styles.button, { backgroundColor: isDark ? "#2C2C2E" : "#F3F4F6" }]}
+                            onPress={handleCancel}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={[styles.btnText, { color: isDark ? "#FFFFFF" : "#4B5563" }]}>
+                                Cancel
+                            </Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.button, styles.confirmBtn]} onPress={handleConfirm}>
+
+                        <TouchableOpacity
+                            style={[
+                                styles.button,
+                                { backgroundColor: isDark ? "#059669" : "#10B981" }
+                            ]}
+                            onPress={handleConfirm}
+                            activeOpacity={0.8}
+                        >
                             <Text style={styles.btnText}>Confirm</Text>
                         </TouchableOpacity>
                     </View>
-                </View>
+                </Animated.View>
             </View>
         </Modal>
     );
@@ -76,67 +133,64 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({ onConfirm, data }) =
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
-        backgroundColor: "rgba(0,0,0,0.4)",
+        backgroundColor: "rgba(0,0,0,0.3)",
         justifyContent: "flex-end",
-        paddingBottom: Platform.OS === "ios" ? 34 : 20,
+    },
+    dismissArea: {
+        flex: 1,
     },
     container: {
         width: "100%",
-        backgroundColor: "#fff",
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        paddingVertical: 24,
-        paddingHorizontal: 20,
+        borderTopLeftRadius: 30,
+        borderTopRightRadius: 30,
+        paddingTop: 16,
+        paddingHorizontal: 24,
         alignItems: "center",
+        ...Platform.select({
+            ios: {
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: -4 },
+                shadowOpacity: 0.1,
+                shadowRadius: 8,
+            },
+            android: {
+                elevation: 24,
+            },
+        }),
     },
-    lineWrapper: {
-        width: "90%",
-        height: 4,
+    grabHandle: {
+        width: 36,
+        height: 5,
         backgroundColor: "#E5E7EB",
-        borderRadius: 2,
-        overflow: "hidden",
-        marginBottom: 16,
-    },
-    movingLine: {
-        width: 80,
-        height: 4,
-        backgroundColor: "#111827",
-        borderRadius: 2,
+        borderRadius: 10,
+        marginBottom: 24,
     },
     title: {
-        fontSize: 18,
-        fontWeight: "600",
-        marginTop: 8,
+        fontSize: 22,
+        fontWeight: "800",
+        marginBottom: 8,
     },
     subtitle: {
-        fontSize: 14,
-        color: "#6B7280",
+        fontSize: 16,
         textAlign: "center",
-        marginTop: 6,
-        marginBottom: 20,
+        marginBottom: 32,
+        lineHeight: 24,
     },
     buttonRow: {
         flexDirection: "row",
-        justifyContent: "space-between",
         width: "100%",
-        paddingHorizontal: 10,
+        gap: 12,
     },
     button: {
         flex: 1,
-        paddingVertical: 12,
-        borderRadius: 10,
-        marginHorizontal: 5,
+        height: 58,
+        borderRadius: 18,
         alignItems: "center",
-    },
-    cancelBtn: {
-        backgroundColor: "#D1D5DB", // gray
-    },
-    confirmBtn: {
-        backgroundColor: "#10B981", // green
+        justifyContent: "center",
     },
     btnText: {
         color: "#fff",
-        fontWeight: "600",
-        fontSize: 16,
+        fontWeight: "700",
+        fontSize: 17,
     },
 });

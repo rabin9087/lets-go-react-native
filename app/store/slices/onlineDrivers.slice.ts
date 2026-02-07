@@ -1,18 +1,18 @@
 // store/slices/onlineDrivers.slice.ts
-import { IDRIVERRIDE } from "@/app/axios/types";
+import { IOnlineDriver } from "@/app/axios/types";
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 import { ILocation } from "./trip.slice";
 
 type OnlineDriversState = {
-  drivers: IDRIVERRIDE[];     // other online drivers
-  driver: IDRIVERRIDE | null; // 👈 current logged-in driver
+  OnlineDrivers: IOnlineDriver[];     // other online drivers
+  onlineDriver: IOnlineDriver | null; // 👈 current logged-in driver
   loading: boolean;
   error: string | null;
 };
 
 const initialState: OnlineDriversState = {
-  drivers: [],
-  driver: null,
+  OnlineDrivers: [],
+  onlineDriver: null,
   loading: false,
   error: null,
 };
@@ -22,91 +22,98 @@ const onlineDriversSlice = createSlice({
   initialState,
   reducers: {
     // ✅ SET CURRENT DRIVER (IMPORTANT)
-    setCurrentDriver: (state, action: PayloadAction<IDRIVERRIDE>) => {
-      state.driver = action.payload;
+    setOnlineDriver: (state, action: PayloadAction<IOnlineDriver>) => {
+      state.onlineDriver = action.payload;
+    },
+    setDriverOnlineStatus: (state, { payload }: PayloadAction<boolean>) => {
+      if (state?.onlineDriver) {
+              if (state.onlineDriver) {
+                state.onlineDriver.isOnline = payload;
+              }
+      }
     },
 
     // ✅ PICKUP LOCATION
-    setDriversCurrentLocations: (
+    setOnlineDriverCurrentLocations: (
       state,
       action: PayloadAction<ILocation>
     ) => {
-      if (!state.driver) {
-        state.driver = {
-          ...({} as IDRIVERRIDE),
+      if (!state.onlineDriver) {
+        state.onlineDriver = {
+          ...({} as IOnlineDriver),
           currentLocation: action.payload,
         };
         return;
       }
 
-      state.driver.currentLocation = action.payload;
+      state.onlineDriver.currentLocation = action.payload;
     },
 
     // ✅ DESTINATION LOCATION
-    setDriversDestinationLocations: (
+    setOnlineDriverDestinationLocations: (
       state,
       action: PayloadAction<ILocation>
     ) => {
-      if (!state.driver) {
-        state.driver = {
-          ...({} as IDRIVERRIDE),
+      if (!state.onlineDriver) {
+        state.onlineDriver = {
+          ...({} as IOnlineDriver),
           destination: action.payload,
         };
         return;
       }
 
-      state.driver.destination = action.payload;
+      state.onlineDriver.destination = action.payload;
     },
 
-      resetDriversLocations: (
+      resetOnlineDriverLocations: (
         state,
         { payload }: PayloadAction<"pickup" | "dropoff">
       ) => {
-        if (!state.driver) return;
+        if (!state.onlineDriver) return;
 
         if (payload === "pickup") {
-          state.driver.currentLocation = {address: "", coords: null};
+          state.onlineDriver.currentLocation = {address: "", coords: null};
         }
 
         if (payload === "dropoff") {
-          state.driver.destination = {address: "", coords: null};
+          state.onlineDriver.destination = {address: "", coords: null};
         }
       },
 
     // ---------------- OTHER DRIVERS ----------------
-    setOnlineDrivers: (state, action: PayloadAction<IDRIVERRIDE[]>) => {
-      state.drivers = action.payload;
+    setOnlineDrivers: (state, action: PayloadAction<IOnlineDriver[]>) => {
+      state.OnlineDrivers = action.payload;
       state.loading = false;
       state.error = null;
     },
 
-    addOrUpdateDriver: (state, action: PayloadAction<IDRIVERRIDE>) => {
-      const index = state.drivers.findIndex(
+    addOrUpdateOnlineDriver: (state, action: PayloadAction<IOnlineDriver>) => {
+      const index = state.OnlineDrivers.findIndex(
         (d) => d.driverId === action.payload.driverId
       );
 
       if (index !== -1) {
-        state.drivers[index] = action.payload;
+        state.OnlineDrivers[index] = action.payload;
       } else {
-        state.drivers.push(action.payload);
+        state.OnlineDrivers.push(action.payload);
       }
     },
 
     removeDriver: (state, action: PayloadAction<string>) => {
-      state.drivers = state.drivers.filter(
+      state.OnlineDrivers = state.OnlineDrivers.filter(
         (d) => d.driverId !== action.payload
       );
     },
 
         setSeatsAvailable: (state, { payload }: PayloadAction<number>) => {
-      if (state.driver) {
-        state.driver.seatAvailable = payload;
+      if (state.onlineDriver) {
+        state.onlineDriver.seatAvailable = payload;
       }
     },
 
     clearOnlineDrivers: (state) => {
-      state.drivers = [];
-      state.driver = null;
+      state.OnlineDrivers = [];
+      state.onlineDriver = null;
       state.loading = false;
       state.error = null;
     },
@@ -114,13 +121,14 @@ const onlineDriversSlice = createSlice({
 });
 
 export const {
-  setCurrentDriver,
-  setDriversCurrentLocations,
-  setDriversDestinationLocations,
+  setOnlineDriver,
+  setDriverOnlineStatus,
+  setOnlineDriverCurrentLocations,
+  setOnlineDriverDestinationLocations,
   setOnlineDrivers,
-  addOrUpdateDriver,
+  addOrUpdateOnlineDriver,
   removeDriver,
-  resetDriversLocations,
+  resetOnlineDriverLocations,
   clearOnlineDrivers,
   setSeatsAvailable
 } = onlineDriversSlice.actions;

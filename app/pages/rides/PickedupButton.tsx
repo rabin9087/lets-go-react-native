@@ -33,13 +33,13 @@ const PickedupButton = ({ loading, confirmModal }: IPickedupButton) => {
         if (!pickedup) {
             dispatch(setPickedup(true));
             await respondToTrip({
-                _id: incomingRide._id,
+                tripId: incomingRide._id,
                 status: "pickedup",
                 driverId: user?._id,
             });
         } else {
             await respondToTrip({
-                _id: incomingRide._id,
+                tripId: incomingRide._id,
                 status: "completed",
                 driverId: user?._id,
             });
@@ -60,7 +60,7 @@ const PickedupButton = ({ loading, confirmModal }: IPickedupButton) => {
                 },
             ]}
         >
-            <ConfirmModal onConfirm={() => handlePress()} data={confirmModal as string} />
+            <ConfirmModal onConfirm={() => handlePress()} />
             {loading ? (
                 <ActivityIndicator color="#fff" />
             ) : (
@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
 
         shadowColor: "#000",
         shadowOpacity: 0.25,
-        shadowRadius: 6,
+        shadowRadius: 5,
         shadowOffset: { width: 0, height: 4 },
         elevation: 6,
     },

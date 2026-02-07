@@ -1,66 +1,73 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
+/**
+ * Configure how the app handles notifications when it is already OPEN (foreground)
+ * following iOS 15+ and Android 13 guidelines.
+ */
 export const setupNotifications = async () => {
-  Notifications.setNotificationHandler({
+  // 1. Set the handler first
+ Notifications.setNotificationHandler({
     handleNotification: async (): Promise<Notifications.NotificationBehavior> => ({
-      shouldShowAlert: true,     // Android + iOS (fallback)
+      // Android + iOS Basic
       shouldPlaySound: true,
-      shouldSetBadge: false,
+      shouldSetBadge: true,
 
-      // ✅ REQUIRED by TS (iOS 14+)
-      shouldShowBanner: true,
-      shouldShowList: true,
+      // ✅ Missing properties required by the NotificationBehavior type
+      // These control how the notification appears in the iOS 14+ shade
+      shouldShowBanner: true, // Shows the heads-up notification (banner)
+      shouldShowList: true,   // Keeps the notification in the notification center list
+      
+      // Optional: Android specific priority
+      priority: Notifications.AndroidNotificationPriority.MAX,
     }),
   });
 
-  // ✅ Android channel (required)
+  // 2. Android Channel Configuration (Material 3 standard)
   if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("ride-requests", {
-      name: "Ride Requests",
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 300, 200, 300],
-      lightColor: "#16a34a",
-      sound: "default",
-    });
+    try {
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "Default Notifications",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#16a34a",
+      });
+
+      await Notifications.setNotificationChannelAsync("ride-requests", {
+        name: "Ride Requests",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 300, 200, 300],
+        lightColor: "#16a34a",
+        sound: "default",
+      });
+    } catch (error) {
+      console.warn("Could not set Android notification channel:", error);
+    }
   }
-
-  // ✅ Permission handling
-  const { status: existingStatus } =
-    await Notifications.getPermissionsAsync();
-
-  let finalStatus = existingStatus;
-
-  if (existingStatus !== "granted") {
-    const { status } =
-      await Notifications.requestPermissionsAsync();
-    finalStatus = status;
-  }
-
-  if (finalStatus !== "granted") {
-    console.log("❌ Notification permission denied");
-    return;
-  }
-
-  console.log("✅ Notifications ready");
 };
 
-
 /**
- * 🔔 Show local notification (foreground / socket / testing)
+ * 🔔 Show local notification
+ * Uses standard iOS/Android visual patterns
  */
 export const showLocalNotification = async (
   title: string,
   body: string,
   data?: Record<string, any>
 ) => {
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title,
-      body,
-      data,
-      sound: "default",
-    },
-    trigger: null, // immediate
-  });
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: data || {},
+        sound: "default",
+        // Android specific
+        color: "#16a34a",
+      },
+      trigger: null, // Send immediately
+    });
+  } catch (error) {
+    console.error("Local Notification Error:", error);
+  }
 };

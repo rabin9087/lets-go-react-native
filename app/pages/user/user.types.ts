@@ -1,39 +1,72 @@
 import { ICoordinates } from "@/app/axios/types";
-import { IIncomingRide } from "@/app/store/slices/trip.slice";
+import { ITrip } from "@/app/store/slices/trip.slice";
+import { IDeviceInfo } from "@/app/utils/device/getDeviceInfo";
 
+export interface ISavedLocation {
+    label: string;
+    address: string;
+    coordinates: ICoordinates;
+}
 
-export type IUser = {
-  _id: string;
+export interface IUser extends Document {
+  // ===== BASIC =====
+  _id?: string;
   name: string;
   email?: string;
   phone: string;
-  password?: string;
-  role: "rider" | "driver" | "admin" | "superadmin" | "";
+  gender: "male" | "female" | "other";
+  role: "rider" | "driver" | "admin" | "superadmin";
   profileImage?: string;
-  status?: "active" | "suspended";
-  refreshJWT?: string;
+  navigationMap:  "android" | "ios" | "";
+  password?: string;
+  country?: string;
+  // ===== STATUS & SECURITY =====
+  status: "active" | "suspended" | "pending";
+  suspendedReason?: string;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  lastLoginAt?: Date;
+  lastLoginDevice?: string;
+  lastLoginIp?: string;
+  failedLoginAttempts?: number;
+  blockedUntil?: Date;
+  termsAccepted: boolean,
+  verifyVia: "phone" | "email" | "",
+  device?: IDeviceInfo;
+  social?: {
+  provider?: "google" | "facebook" | "";
+  providerId?: string;
+};
+
+  // ===== LOCATION & PRESENCE =====
+  lastKnownLocation?: ICoordinates;
+  lastSeenAt?: Date;
+   savedLocations?: ISavedLocation[];
+
+  // ===== RIDER PROFILE =====
   riderProfile?: {
     rating?: number;
     totalTrips?: number;
-    savedLocations?: { label: string; coordinates: { lat: number; lng: number } }[];
+    totalSpent?: number;
   };
-  driverProfile?: {
-    isOnline?: boolean;
-    isApproved?: boolean;
-    rating?: number;
-    totalTrips?: number;
-    vehicle?: any;
-    coordinate?: { lat: number; lng: number };
-    bankDetails?: any;
-    identityDocs?: any;
+
+  // ===== DRIVER PROFILE =====
+
+  // ===== PAYMENTS =====
+  payments: {
+    hasStripeCustomer: boolean,
+    hasDefaultPaymentMethod: boolean
+  },
+
+  // ===== NOTIFICATIONS =====
+  pushTokens?: boolean;
+  notificationPrefs?: {
+    sms?: boolean;
+    email?: boolean;
+    push?: boolean;
   };
-  savedLocations: [
-    {
-      label: string,
-      coordinates: ICoordinates,
-      address: string
-    },
-  ],
-  currentTrip: IIncomingRide,
-  trips: string[]
+
+  // ===== META =====
+  createdAt: Date;
+  updatedAt: Date;
 }

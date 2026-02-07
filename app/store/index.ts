@@ -7,6 +7,8 @@ import onlineDrivers from './slices/onlineDrivers.slice';
 import socketData from './slices/socketInfo.slice';
 import trips from './slices/trip.slice';
 import userSlice from './slices/user.slice';
+import driverOnboardingSlice from './slices/driverOnboardingSlice';
+import driver from './slices/driver.slice';
 
 export const store = configureStore({
   reducer: {
@@ -14,7 +16,9 @@ export const store = configureStore({
     onlineDriversInfo: onlineDrivers, // all online drivers
     tripInfo: trips, // trip details
     socketInfo: socketData, // Socket Info,
-    addressInfo: addressSlice, // Socket Info,
+    addressInfo: addressSlice, 
+    driverOnboardingInfo: driverOnboardingSlice, 
+    driverInfo: driver, 
   },
   devTools:__DEV__
 });

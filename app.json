@@ -16,21 +16,22 @@
     },
     "ios": {
       "supportsTablet": true,
-      "infoPlist": {
-                "NSLocationWhenInUseUsageDescription": "Your location is used for navigation."
-      },
+       "infoPlist": {
+      "ITSAppUsesNonExemptEncryption": false
+    },
       "bundleIdentifier": "com.rabinshah.letsgo",
       "buildNumber": "1.0.0"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff",
+        "backgroundColor": "#ffffff"
       },
-       "package": "com.rabinshah.letsgo",
+      "package": "com.rabinshah.letsgo",
+      "googleServicesFile": "./android/app/google-services.json",
       "versionCode": 1,
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false,
+      "predictiveBackGestureEnabled": false
     },
     "web": {
       "bundler": "metro",

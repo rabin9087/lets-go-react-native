@@ -1,18 +1,17 @@
-import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/driver";
+import { IUpdateOnlineStatus, updateOnlineStatus } from "@/app/axios/onlineDriver";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 import { setIsSocketConnected } from "@/app/store/slices/socketInfo.slice";
 import { ILocation, setDropoffLocation, setPickupLocation } from "@/app/store/slices/trip.slice";
-import { setDriverOnlineStatus } from "@/app/store/slices/user.slice";
 import * as Location from "expo-location";
 import Toast from "react-native-toast-message";
 import { goOnlineDriverSocket } from "../sockets/driver.socket";
-import { connectSocket, disConnectSocket, socket } from "../sockets/socket";
 import { AppThunk } from "@/app/store";
+import { setDriverOnlineStatus } from "@/app/store/slices/onlineDrivers.slice";
+import { IVehicle } from "@/app/store/slices/types.slice";
 
 export const handleMapLongPress = async (event: any, setSelectedLocation: any) => {
         try {
             const { latitude, longitude } = event.nativeEvent.coordinate;
-
             // Reverse geocode
             const result = await Location.reverseGeocodeAsync({
                 latitude,
@@ -75,9 +74,10 @@ export const goOnlineThunk =
     try {
       const { tripInfo, socketInfo, userInfo, onlineDriversInfo } = getState();
       const { pickupLocation, dropoffLocation, routeInfo } = tripInfo;
+      const {driver} = useAppSelector( s=> s.driverInfo)
       const { isSocketConnected } = socketInfo;
         const { user } = userInfo;
-        const {driver} = onlineDriversInfo
+        const {onlineDriver} = onlineDriversInfo
 
       if (!user) {
         console.warn("User not found");
@@ -87,10 +87,9 @@ export const goOnlineThunk =
       const payload: IUpdateOnlineStatus = {
         currentLocation: pickupLocation,
         destination: dropoffLocation!,
-        email_phone: user.phone!,
         onlineStatus,
-        rego: "AS87GH",
-        seatAvailable: driver?.seatAvailable as number,
+        vehicle: driver?.vehicles.find((vehicle) => vehicle.inUse === true) as Partial<IVehicle>,
+        seatAvailable: onlineDriver?.seatAvailable as number,
         routeGeo:
           routeInfo.routeGeo?.map(({ longitude, latitude }) => ({
             longitude,
@@ -103,7 +102,6 @@ export const goOnlineThunk =
       ========================= */
       if (onlineStatus) {
         if (!isSocketConnected) {
-          connectSocket(user._id as string, user.role as string);
 
           goOnlineDriverSocket(user._id as string);
 
@@ -111,7 +109,6 @@ export const goOnlineThunk =
         }
       } else {
         if (isSocketConnected) {
-          disConnectSocket();
           dispatch(setIsSocketConnected(false));
         }
       }

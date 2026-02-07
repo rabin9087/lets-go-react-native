@@ -1,61 +1,28 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, View, Text, ActivityIndicator } from 'react-native';
-import Map from './pages/home/Map';
-import Protect from '@/components/Protect';
+import React from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { useAppSelector } from './store/hooks';
 import LoginForm from './pages/user/UserSignin';
+import Colors from '@/constants/Colors';
+import { useColorScheme } from '@/components/useColorScheme';
+import Map from './pages/home/Map';
 
-export default function HomeScreen() {
-  const [showApp, setShowApp] = useState(false);
+export default function EntryPoint() {
+  const { user } = useAppSelector(s => s.userInfo);
+  const theme = useColorScheme() ?? 'light';
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowApp(true);
-    }, 2000); // ⏱ 2 seconds splash
+  // While checking auth status
+  // if (loading) {
+  //   return (
+  //     <View style={[styles.centered, { backgroundColor: Colors[theme].background }]}>
+  //       <ActivityIndicator size="large" color={Colors[theme].tint} />
+  //     </View>
+  //   );
+  // }
 
-    return () => clearTimeout(timer);
-  }, []);
-
-  // 🔥 Splash screen
-  if (!showApp) {
-    return (
-      <View style={styles.splash}>
-        <Text style={styles.title}>Welcome to Let's Go</Text>
-        <ActivityIndicator size="large" />
-      </View>
-
-      //  <View style={styles.splash}>
-      //   <LottieView
-      //     source={require('../assets/animations/splash.json')}
-      //     autoPlay
-      //     loop={false}
-      //     style={{ width: 250, height: 250 }}
-      //   />
-      // </View>
-    );
-  }
-
-  // 🔐 Existing logic (UNCHANGED)
-  return (
-    <Protect fallback={<LoginForm />}>
-      <View style={styles.container}>
-        <Map />
-      </View>
-    </Protect>
-  );
+  // If user exists, show Home (Map), otherwise show Login
+  return user?._id ? <Map /> : <LoginForm />;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-
-  splash: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' }
 });

@@ -1,9 +1,12 @@
 import { useColorScheme } from "@/components/useColorScheme";
+import Colors from "@/constants/Colors"; // Using your theme file
 import AntDesign from "@expo/vector-icons/AntDesign";
-import { StyleSheet, View } from "react-native";
+import React from "react";
+import { StyleSheet, View, Platform } from "react-native";
 
 const Menu = () => {
     const theme = useColorScheme() ?? "light";
+    const colors = Colors[theme];
     const isDark = theme === "dark";
 
     return (
@@ -11,14 +14,19 @@ const Menu = () => {
             style={[
                 styles.container,
                 {
-                    backgroundColor: isDark ? "#fff" : "#000",
+                    // Background should be the 'surface' color (usually white in light, dark gray in dark)
+                    backgroundColor: colors.background,
+                    // Adding a very subtle border for dark mode visibility (standard in iOS/Android)
+                    borderWidth: isDark ? 1 : 0,
+                    borderColor: "#333",
                 },
             ]}
         >
             <AntDesign
-                name="menu"
+                name="menu" // 'menuunfold' or 'menu' based on your preference
                 size={22}
-                color={isDark ? "#000" : "#fff"}
+                // Automatically uses the correct text color from your theme
+                color={colors.text}
             />
         </View>
     );
@@ -34,11 +42,17 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
 
-        // Shadow
-        elevation: 6,
-        shadowColor: "#000",
-        shadowOpacity: 0.2,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 3 },
+        // Guidelines: iOS uses shadows, Android uses elevation
+        ...Platform.select({
+            ios: {
+                shadowColor: "#000",
+                shadowOpacity: 0.15,
+                shadowRadius: 8,
+                shadowOffset: { width: 0, height: 4 },
+            },
+            android: {
+                elevation: 4,
+            },
+        }),
     },
 });

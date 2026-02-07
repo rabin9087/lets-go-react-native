@@ -1,304 +1,358 @@
-import { IResponse } from "@/app/axios/types";
-import { autoLoginUser, loginUser, pushNotificationToken } from "@/app/axios/user";
-import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { setDriversCurrentLocations, setDriversDestinationLocations } from "@/app/store/slices/onlineDrivers.slice";
-import { IIncomingRide, ILocation, setDropoffLocation, setIncomingRide, setPickedup, setPickupLocation } from "@/app/store/slices/trip.slice";
-import { setUser } from "@/app/store/slices/user.slice";
-import { tripJoinSocket } from "@/app/utils/sockets/rider.socket";
-import { socket } from "@/app/utils/sockets/socket";
+import { clearAllTokens, storeTokens } from "@/app/axios/secureTokens";
+import { serverReturnDataType } from "@/app/axios/types";
+import { loginUser, pushNotificationToken } from "@/app/axios/user";
+import { useAppDispatch } from "@/app/store/hooks";
+import { setTempIdentifier, setUser } from "@/app/store/slices/user.slice";
+import { getDeviceInfo } from "@/app/utils/device/getDeviceInfo";
+import registerForPushNotificationsAsync from "@/app/utils/notifications/registerForPushNotifications";
 import Colors from "@/constants/Colors";
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMutation } from "@tanstack/react-query";
-import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View, useColorScheme} from "react-native";
-import { IUser } from "./user.types";
-import registerForPushNotificationsAsync from "@/app/utils/notifications/registerForPushNotifications";
+import React, { useEffect, useState, useMemo } from "react";
+import * as SecureStore from "expo-secure-store";
+import {
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+    useColorScheme,
+    StatusBar,
+    Switch,
+    Modal,
+    FlatList,
+    LayoutAnimation
+} from "react-native";
+import countries from '../../utils/countries.json';
+import { setIncomingRide, setNumberOfPassengers } from "@/app/store/slices/trip.slice";
+import { setDriver } from "@/app/store/slices/driver.slice";
+import { setActiveTrips } from "@/app/store/activeTrips.slice";
+import { setOnlineDriver, setSeatsAvailable } from "@/app/store/slices/onlineDrivers.slice";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { connectSocket, disConnectSocket } from "@/app/utils/sockets/socket";
 
-export interface ILoginPayload {
-    email_phone: string;
-    password: string;
+export function formatPhoneNumber(rawPhone: string, dialCode: string): string {
+    let digits = rawPhone.replace(/\D/g, "");
+    if (digits.startsWith("0")) digits = digits.slice(1);
+    return `${dialCode}${digits}`;
 }
 
-const useLogin = () =>
-    useMutation<IResponse, Error, ILoginPayload>({
-        mutationFn: async (data) => {
-            const res = await loginUser(data);
-            if (!res) throw new Error("Login failed");
-            return res;
-        },
-    });
-
 const LoginForm = () => {
-    const [input, setInput] = React.useState({ email_phone: "", password: "" });
-    const [errorMsg, setErrorMsg] = React.useState("");
+    const [input, setInput] = useState({ email_phone: "", password: "" });
+    const [passwordVisible, setPasswordVisible] = useState(false);
+    const [rememberMe, setRememberMe] = useState(false);
+    const [errorMsg, setErrorMsg] = useState("");
+
+    const [isCountryModalVisible, setIsCountryModalVisible] = useState(false);
+    const [selectedCountry, setSelectedCountry] = useState(countries[0]);
+    const [searchQuery, setSearchQuery] = useState("");
+
     const router = useRouter();
     const theme = useColorScheme() ?? "light";
     const themeColors = Colors[theme];
+    const isDark = theme === "dark";
     const dispatch = useAppDispatch();
-    const { user } = useAppSelector(s => s.userInfo)
-    const loginMutation = useLogin();
-    const handleChange = (key: keyof typeof input, value: string) => {
-        setInput((prev) => ({ ...prev, [key]: value }));
-    };
 
-    const [passwordVisible, setPasswordVisible] = useState<boolean>(false)
+    // Determine if input is phone or email
+    const isPhoneNumber = useMemo(() => /^\d/.test(input.email_phone), [input.email_phone]);
+
+    const filteredCountries = useMemo(() => {
+        return countries.filter((c) =>
+            c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            c.dial_code.includes(searchQuery)
+        );
+    }, [searchQuery]);
+
+    useEffect(() => {
+        const init = async () => {
+            try {
+                const res = await fetch("https://get.geojs.io/v1/ip/geo.json");
+                const geo = await res.json();
+                const found = countries.find(c => c.name === geo.country);
+                if (found) setSelectedCountry(found);
+            } catch (e) { /* fallback to default */ }
+        };
+        init();
+    }, []);
+
+    const loginMutation = useMutation({
+        mutationFn: async (payload: any) => {
+            const device = await getDeviceInfo();
+            const { rawId, ...serverPayload } = payload;
+            const pushToken = await registerForPushNotificationsAsync();
+            if (pushToken) {
+                await storeTokens({ tokenName: "last_push_token", token: pushToken });
+            }
+            return await loginUser({ ...serverPayload, device, pushToken });
+        },
+        onSuccess: async (result: any, variables: any) => {
+            const { status, message, data } = result as serverReturnDataType;
+
+            if (status === "error" && message?.includes("Please enter the OTP")) {
+                dispatch(setTempIdentifier(variables.email_phone));
+                router.push(`/pages/user/VerifyOTP?otpTypes=Account_Verify&routeTo=/pages/user/UserSignin`);
+                return;
+            }
+
+            if (status === "success" && data?.user?._id) {
+                connectSocket(data?.user?._id as string, data?.user.role as string)
+                try {
+                    if (rememberMe) {
+                        await SecureStore.setItemAsync("remembered_user", variables.rawId);
+                        await SecureStore.setItemAsync("secure_password", variables.password);
+                    }
+
+                    if (data?.tokens) {
+                        await storeTokens({ tokenName: "accessJWT", token: data.tokens.accessJWT });
+                        await storeTokens({ tokenName: "refreshJWT", token: data.tokens.refreshJWT });
+                        await storeTokens({ tokenName: "sessionId", token: data.tokens.sessionId });
+                    }
+
+                    const { user, driver, activeTrips, onlineDriver } = data;
+                    dispatch(setUser(user));
+                    if (driver) dispatch(setDriver(driver));
+
+                    if (activeTrips?.[0]) {
+                        dispatch(setIncomingRide(activeTrips[0]));
+                        dispatch(setNumberOfPassengers(activeTrips[0].people || 1));
+                        if (user.role === "rider") dispatch(setActiveTrips(activeTrips));
+                    }
+
+                    if (onlineDriver) {
+                        dispatch(setOnlineDriver(onlineDriver));
+                        dispatch(setSeatsAvailable(onlineDriver.seatAvailable || 4));
+                    }
+                    router.replace("/pages/home/Map");
+                } catch (err) {
+                    setErrorMsg("Failed to initialize session.");
+                }
+            } else {
+                setErrorMsg(message || "Invalid credentials.");
+                disConnectSocket()
+                await clearAllTokens();
+            }
+        },
+        onError: () => setErrorMsg("Server connection failed.")
+    });
 
     const handleSubmit = () => {
         setErrorMsg("");
         const { email_phone, password } = input;
+        if (!email_phone || !password) return setErrorMsg("All fields are required");
 
-        if (!email_phone || !password) {
-            setErrorMsg("All fields are required");
-            return;
-        }
+        const userId = isPhoneNumber
+            ? formatPhoneNumber(email_phone, selectedCountry.dial_code)
+            : email_phone.trim().toLowerCase();
 
-        loginMutation.mutate(input, {
-            onSuccess: async (data) => {
-                dispatch(setUser(data.user as IUser));
-
-                if (data.tokens?.accessJWT && data.tokens?.refreshJWT) {
-                    await SecureStore.setItemAsync("accessJWT", data.tokens.accessJWT);
-                    await SecureStore.setItemAsync("refreshJWT", data.tokens.refreshJWT);
-                }
-
-                router.replace("/pages/home/Map");
-                const token = await registerForPushNotificationsAsync(); // token: string | undefined
-
-                if (token) {
-                    await pushNotificationToken({ token }); // ✅ pass as object
-                } else {
-                    console.log("No push token obtained");
-                }
-            },
-            onError: (err: any) => {
-                setErrorMsg(err?.response?.data?.message || "Login failed");
-            },
+        loginMutation.mutate({
+            email_phone: userId,
+            password,
+            rawId: email_phone
         });
     };
 
-    const handleAutoLogin = async () => {
-        try {
-            const refreshJWT = await AsyncStorage.getItem("refreshJWT");
-            if (!refreshJWT) return;
-
-            const res = await autoLoginUser();
-            console.log("AUTO LOGIN RES:", res);
-
-            if (res?.status === "success" && res?.data?.user?._id) {
-
-                dispatch(setUser(res?.data?.user as IUser));
-                if (res.data.user.currentTrip) {
-                    tripJoinSocket(res.data.user.currentTrip?._id as string, user?.role as string)
-                    socket.emit("trip:join", { tripId: res.data.user.currentTrip?._id }, res.data.user?.role); dispatch(setIncomingRide(res?.data?.user?.currentTrip as IIncomingRide))
-                    if (res?.data?.user?.role === "rider") {
-                        dispatch(setPickupLocation(res?.data?.user?.currentTrip?.pickupLocation as ILocation))
-                        dispatch(setDropoffLocation(res?.data?.user?.currentTrip?.dropoffLocation as ILocation))
-                    }
-                    if (res?.data?.user?.role === "driver") {
-                        dispatch(setDriversCurrentLocations(res?.data?.driver?.currentLocation as ILocation))
-                        dispatch(setDriversDestinationLocations(res?.data?.driver?.destination as ILocation))
-                    }
-                    if (res.data.user.currentTrip.status === "ontrip") {
-                        dispatch(setPickedup(false))
-                    }
-                    if (res.data.user.currentTrip.status === "pickedup") {
-                        dispatch(setPickedup(true))
-                    }
-                }
-                if (res?.data.tokens?.accessJWT) {
-                    await AsyncStorage.setItem("accessJWT", res.data.tokens.accessJWT);
-                }
-
-                router.replace("/pages/home/Map");
-            }
-        } catch (err) {
-            console.log("Auto-login failed");
-            await SecureStore.deleteItemAsync("accessJWT");
-            await SecureStore.deleteItemAsync("refreshJWT");
-        }
+    const handleInputChange = (v: string) => {
+        // Smoothly animate the transition between icon and country code
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setInput(p => ({ ...p, email_phone: v }));
     };
 
-    useEffect(() => {
-        if (!user?._id) {
-            handleAutoLogin();
-        } else {
-            router.replace("/pages/home/Map");
-
-        }
-    }, []);
-
-    const fields = [
-        {
-            key: "email_phone",
-            icon: "mail-outline",
-            placeholder: "Email or Phone",
-            keyboardType: "email-address",
-        },
-        {
-            key: "password",
-            icon: "lock-closed-outline",
-            placeholder: "Password",
-            secureTextEntry: passwordVisible,
-            isPassword: true
-        },
-    ];
-
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={{ flex: 1 }}
-        >
-            <ScrollView
-                contentContainerStyle={{
-                    flexGrow: 1,
-                    padding: 24,
-                    justifyContent: "center",
-                    backgroundColor: themeColors.background,
-                }}
-                keyboardShouldPersistTaps="handled"
+        <View style={{ flex: 1, backgroundColor: themeColors.background }}>
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+            <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                style={{ flex: 1 }}
             >
-                <View
-                    style={{
-                        backgroundColor: theme === "dark" ? "#111" : "#fff",
-                        padding: 24,
-                        borderRadius: 20,
-                        shadowColor: "#000",
-                        shadowOpacity: 0.15,
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowRadius: 10,
-                        elevation: 6,
-                    }}
+                <ScrollView
+                    contentContainerStyle={styles.scrollContainer}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
                 >
-                    <Text
-                        style={{
-                            fontSize: 26,
-                            fontWeight: "700",
-                            color: themeColors.text,
-                            marginBottom: 22,
-                            textAlign: "center",
-                        }}
-                    >
-                        Login
-                    </Text>
+                    <View style={styles.headerArea}>
+                        <Text style={[styles.welcomeText, { color: themeColors.text }]}>Welcome Back</Text>
+                        <Text style={styles.subText}>Sign in to continue</Text>
+                    </View>
 
-                    {fields.map((f, index) => (
-                        <View
-                            key={index}
-                            style={{
-                                flexDirection: "row",
-                                alignItems: "center",
-                                borderWidth: 1,
-                                borderColor: theme === "dark" ? "#333" : "#ddd",
-                                backgroundColor:
-                                    theme === "dark" ? "#1a1a1a" : "#f9f9f9",
-                                borderRadius: 14,
-                                paddingHorizontal: 12,
-                                paddingVertical: 10,
-                                marginBottom: 12,
-                            }}
-                        >
-                            <Ionicons
-                                name={f.icon as any}
-                                size={20}
-                                color={themeColors.tint}
-                            />
+                    <View style={[styles.card, { backgroundColor: isDark ? "#1C1C1E" : "#FFFFFF" }]}>
+                        {/* EMAIL / PHONE INPUT - FIXED WIDTH ADDON PREVENTS SHAKING */}
+                        <View style={[styles.inputContainer, { backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }]}>
+                            <View style={styles.leftAddon}>
+                                {isPhoneNumber ? (
+                                    <TouchableOpacity
+                                        style={styles.countryTag}
+                                        onPress={() => setIsCountryModalVisible(true)}
+                                    >
+                                        <Text style={styles.emoji}>{selectedCountry.emoji}</Text>
+                                        <Text style={[styles.code, { color: themeColors.text }]}>{selectedCountry.dial_code}</Text>
+                                        <Ionicons name="chevron-down" size={10} color="#8E8E93" />
+                                    </TouchableOpacity>
+                                ) : (
+                                    <Ionicons name="person-outline" size={20} color={isDark ? "#8E8E93" : "#3A3A3C"} />
+                                )}
+                            </View>
                             <TextInput
-                                placeholder={f.placeholder}
-                                value={input[f.key as keyof typeof input]}
-                                onChangeText={(v) =>
-                                    handleChange(f.key as keyof typeof input, v)
-                                }
-                                placeholderTextColor={theme === "dark" ? "#888" : "#999"}
-                                keyboardType={f.keyboardType as any}
-                                secureTextEntry={f.isPassword ? !passwordVisible : false}
-                                style={{
-                                    marginLeft: 10,
-                                    flex: 1,
-                                    color: themeColors.text,
-                                    fontSize: 16,
-                                }}
+                                placeholder="Email or Phone"
+                                value={input.email_phone}
+                                onChangeText={handleInputChange}
+                                style={[styles.input, { color: themeColors.text }]}
+                                placeholderTextColor="#8E8E93"
+                                autoCapitalize="none"
+                                keyboardType={"email-address"}
                             />
-                            {/* Eye Icon (only for password) */}
-                            {f.isPassword &&
-                                <TouchableOpacity
-                                    onPress={() => setPasswordVisible(prev => !prev)}
-                                    style={{ paddingLeft: 10 }}
-                                >
-                                    <Ionicons
-                                        name={passwordVisible ? "eye-outline" : "eye-off-outline"}
-                                        size={22}
-                                        color={themeColors.tint}
-                                    />
-                                </TouchableOpacity>}
-
                         </View>
-                    ))}
 
-                    {errorMsg ? (
-                        <Text style={{ color: "red", textAlign: "center", marginBottom: 12 }}>
-                            {errorMsg}
-                        </Text>
-                    ) : null}
+                        {/* PASSWORD INPUT */}
+                        <View style={[styles.inputContainer, { backgroundColor: isDark ? "#2C2C2E" : "#F2F2F7" }]}>
+                            <View style={styles.leftAddon}>
+                                <Ionicons name="lock-closed-outline" size={20} color={isDark ? "#8E8E93" : "#3A3A3C"} />
+                            </View>
+                            <TextInput
+                                placeholder="Password"
+                                value={input.password}
+                                onChangeText={(v) => setInput(p => ({ ...p, password: v }))}
+                                secureTextEntry={!passwordVisible}
+                                style={[styles.input, { color: themeColors.text }]}
+                                placeholderTextColor="#8E8E93"
+                            />
+                            <TouchableOpacity onPress={() => setPasswordVisible(!passwordVisible)} style={styles.eyeBtn}>
+                                <Ionicons name={passwordVisible ? "eye-off-outline" : "eye-outline"} size={22} color={themeColors.tint} />
+                            </TouchableOpacity>
+                        </View>
 
-                    {/* SUBMIT */}
-                    <TouchableOpacity
-                        onPress={handleSubmit}
-                        disabled={loginMutation.isPending}
-                        style={{
-                            backgroundColor: Colors[theme].backgroundPrimary,
-                            // selectedRole === "driver" ? "#1976D2" : "#4CAF50",
-                            paddingVertical: 14,
-                            borderRadius: 14,
-                            marginTop: 16,
-                        }}
-                    >
-                        {loginMutation.isPending ? <ActivityIndicator color={theme ? "#000" : "#fff"} /> : <Text
-                            style={{
-                                textAlign: "center",
-                                fontSize: 18,
-                                fontWeight: "600",
-                                color: "#fff",
-                            }}
+                        {errorMsg ? <Text style={styles.errorText}>{errorMsg}</Text> : null}
+
+                        <View style={styles.utilRow}>
+                            <View style={styles.rememberMeBox}>
+                                <Switch
+                                    value={rememberMe}
+                                    onValueChange={setRememberMe}
+                                    trackColor={{ true: themeColors.backgroundPrimary }}
+                                    style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+                                />
+                                <Text style={[styles.rememberMeText, { color: isDark ? "#8E8E93" : "#3A3A3C" }]}>Remember Me</Text>
+                            </View>
+                            <TouchableOpacity onPress={() => router.push("pages/user/ForgotPassword")}>
+                                <Text style={[styles.forgotPassText, { color: themeColors.tint }]}>Forgot Password?</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity
+                            onPress={handleSubmit}
+                            style={[styles.loginButton, { backgroundColor: themeColors.backgroundPrimary }]}
+                            disabled={loginMutation.isPending}
                         >
-                            Create Account
-                        </Text>}
-                    </TouchableOpacity>
+                            {loginMutation.isPending ? (
+                                <ActivityIndicator color="#FFF" />
+                            ) : (
+                                <Text style={styles.loginButtonText}>Login</Text>
+                            )}
+                        </TouchableOpacity>
 
-                    <TouchableOpacity onPress={() => router.push("pages/user/UserSignup")}>
-                        <Text
-                            style={{
-                                textAlign: "center",
-                                marginTop: 14,
-                                color: themeColors.tint,
-                                textDecorationLine: "underline",
-                            }}
-                        >
-                            Don't have an account? Signup
-                        </Text>
-                    </TouchableOpacity>
+                        <View style={styles.signupContainer}>
+                            <Text style={[styles.noAccountText, { color: isDark ? "#8E8E93" : "#3A3A3C" }]}>Don't have an account?</Text>
+                            <TouchableOpacity onPress={() => router.push("pages/user/UserSignup")}>
+                                <Text style={[styles.signupText, { color: themeColors.tint }]}> Sign Up</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
 
-                    {loginMutation.isSuccess && (
-                        <Text
-                            style={{ color: "green", textAlign: "center", marginTop: 12 }}
-                        >
-                            Logged in successfully!
-                        </Text>
-                    )}
-
-                    {loginMutation.isError && !errorMsg && (
-                        <Text
-                            style={{ color: "red", textAlign: "center", marginTop: 12 }}
-                        >
-                            Failed to login
-                        </Text>
-                    )}
+            <Modal visible={isCountryModalVisible} animationType="slide">
+                <View style={[styles.modalBox, { backgroundColor: themeColors.background }]}>
+                    <View style={styles.modalHeader}>
+                        <Text style={[styles.modalTitle, { color: themeColors.text }]}>Select Country</Text>
+                        <TouchableOpacity onPress={() => setIsCountryModalVisible(false)}>
+                            <Ionicons name="close-circle" size={32} color={themeColors.text} />
+                        </TouchableOpacity>
+                    </View>
+                    <TextInput
+                        placeholder="Search country..."
+                        style={[styles.searchBar, { backgroundColor: isDark ? "#1C1C1E" : "#F2F2F7", color: themeColors.text }]}
+                        onChangeText={setSearchQuery}
+                        placeholderTextColor="#8E8E93"
+                    />
+                    <FlatList
+                        data={filteredCountries}
+                        keyExtractor={(item) => item.code}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity
+                                style={styles.countryRow}
+                                onPress={() => { setSelectedCountry(item); setIsCountryModalVisible(false); }}
+                            >
+                                <Text style={styles.countryEmoji}>{item.emoji}</Text>
+                                <Text style={[styles.countryLabel, { color: themeColors.text }]}>{item.name}</Text>
+                                <Text style={{ color: "#8E8E93" }}>{item.dial_code}</Text>
+                            </TouchableOpacity>
+                        )}
+                    />
                 </View>
-            </ScrollView>
-        </KeyboardAvoidingView>
+            </Modal>
+        </View>
     );
 };
+
+const styles = StyleSheet.create({
+    scrollContainer: { flexGrow: 1, paddingHorizontal: 24, justifyContent: 'center', paddingBottom: 40 },
+    headerArea: { marginBottom: 32 },
+    welcomeText: { fontSize: 32, fontWeight: "800", letterSpacing: -0.5 },
+    subText: { fontSize: 16, color: "#8E8E93", marginTop: 4 },
+    card: {
+        padding: 24, borderRadius: 24,
+        ...Platform.select({
+            ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 12 },
+            android: { elevation: 4 },
+        }),
+    },
+    inputContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        borderRadius: 16,
+        paddingLeft: 4, // Padding moved to leftAddon internal
+        paddingRight: 16,
+        height: 62,
+        marginBottom: 16
+    },
+    leftAddon: {
+        width: 80, // Fixed width prevents the text input from jumping
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    input: { flex: 1, fontSize: 16, fontWeight: "500" },
+    countryTag: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRightWidth: 1,
+        borderRightColor: 'rgba(142, 142, 147, 0.2)',
+        paddingRight: 8
+    },
+    emoji: { fontSize: 18, marginRight: 4 },
+    code: { fontWeight: '700', fontSize: 14, marginRight: 2 },
+    eyeBtn: { padding: 4 },
+    utilRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    rememberMeBox: { flexDirection: 'row', alignItems: 'center' },
+    rememberMeText: { marginLeft: 4, fontSize: 14, fontWeight: '500' },
+    forgotPassText: { fontWeight: "600", fontSize: 14 },
+    loginButton: { height: 58, borderRadius: 18, justifyContent: "center", alignItems: "center", marginBottom: 20 },
+    loginButtonText: { color: "#FFF", fontSize: 18, fontWeight: "700" },
+    errorText: { color: "#FF3B30", textAlign: "center", marginBottom: 16, fontWeight: "500" },
+    signupContainer: { flexDirection: "row", justifyContent: "center", alignItems: "center" },
+    noAccountText: { fontSize: 15 },
+    signupText: { fontSize: 15, fontWeight: "700" },
+    modalBox: { flex: 1, padding: 25, paddingTop: 60 },
+    modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    modalTitle: { fontSize: 22, fontWeight: '800' },
+    searchBar: { height: 50, borderRadius: 15, paddingHorizontal: 15, marginBottom: 15 },
+    countryRow: { flexDirection: 'row', paddingVertical: 18, borderBottomWidth: 1, borderBottomColor: '#EEE', alignItems: 'center' },
+    countryEmoji: { fontSize: 24, marginRight: 15 },
+    countryLabel: { flex: 1, fontSize: 16, fontWeight: '600' }
+});
 
 export default LoginForm;
